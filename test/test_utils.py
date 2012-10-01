@@ -1,39 +1,42 @@
 from subprocess import Popen, PIPE
 import sys
 
+
 class ProcessTimedout(Exception):
     """
     Raised if a process timeout.
     """
-    
+
+
 class ProcessError(Exception):
     """
     Raised if a process fail.
     """
+
 
 def timed_process(args, timeout=None, env=None):
     """
     Execute a command using :py:mod:`subprocess` module,
     if timeout is specified the process is killed if it does
     not terminate in the maxim required time.
-    
+
     Parameters:
-    
+
     args
         the command to run, in a list format
-        
+
     timeout
         the maximumt time to wait for the process to terminate
         before killing it
-    
+
     env
         a dictionary representing the environment
     """
     if env is None:
-        env = { "PATH" : "/usr/bin:/usr/sbin:/bin:/sbin" }
+        env = {"PATH": "/usr/bin:/usr/sbin:/bin:/sbin", }
     try:
         proc = Popen(args, stdout=PIPE, stderr=PIPE, shell=False,
-                  env=env)
+                     env=env)
     except OSError:
         error = sys.exc_info()[1]
         raise ProcessError("OSError %s" % error)
@@ -53,7 +56,7 @@ def timed_process(args, timeout=None, env=None):
         except AttributeError:
             try:
                 os.kill(proc.pid, signal.SIGKILL)
-            except OSError: # process already gone
+            except OSError:  # process already gone
                 pass
         raise ProcessTimedout("Process %s timed out after %s seconds." %
                               (" ".join(args), timeout))
