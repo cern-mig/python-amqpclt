@@ -6,7 +6,7 @@ python:
 # command to install dependencies
 install:
   - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install simplejson --use-mirrors; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install ssl --use-mirrors; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install ssl --use-mirrors || eccho "ok"; fi
   - pip install auth.credential --use-mirrors
   - pip install dirq --use-mirrors
   - pip install messaging --use-mirrors

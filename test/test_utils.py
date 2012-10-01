@@ -26,7 +26,7 @@ def timed_process(args, timeout=None, env=None):
         the command to run, in a list format
 
     timeout
-        the maximumt time to wait for the process to terminate
+        the maximum time to wait for the process to terminate
         before killing it
 
     env
@@ -35,8 +35,7 @@ def timed_process(args, timeout=None, env=None):
     if env is None:
         env = {"PATH": "/usr/bin:/usr/sbin:/bin:/sbin", }
     try:
-        proc = Popen(args, stdout=PIPE, stderr=PIPE, shell=False,
-                     env=env)
+        proc = Popen(args, stdout=PIPE, stderr=PIPE, shell=False, env=env)
     except OSError:
         error = sys.exc_info()[1]
         raise ProcessError("OSError %s" % error)
