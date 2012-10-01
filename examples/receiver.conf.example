@@ -1,0 +1,18 @@
+<incoming-broker>
+ uri = "amqp://broker.acme.com:6163/rabbitmq"
+ <auth>
+   scheme = plain
+   name = receiver
+   pass = secret
+ </auth>
+</incoming-broker>
+
+<subscribe>
+ destination = /queue/myapp.data
+</subscribe>
+
+<outgoing-queue>
+ path = /var/spool/receiver
+</outgoing-queue>
+
+pidfile = /var/run/receiver.pid

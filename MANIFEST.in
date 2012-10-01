@@ -1,0 +1,3 @@
+include README.rst CHANGES
+include man/*.1
+include test/*

@@ -1,0 +1,14 @@
+<incoming-queue>
+ path = /var/spool/sender
+</incoming-queue>
+
+callback-code = <<EOF
+$hdr{destination} = "/queue/myapp.data";
+$hdr{persistent} = "true";
+EOF
+
+<outgoing-broker>
+ uri = "amqp://broker.acme.com:6163/rabbitmq"
+</outgoing-broker>
+
+pidfile = /var/run/sender.pid
