@@ -5,8 +5,8 @@ python:
   - "2.7"
 # command to install dependencies
 install:
-  - pip install simplejson --use-mirrors || echo "ok"
-  - pip install ssl --use-mirrors || echo "ok"
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install simplejson --use-mirrors; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install ssl --use-mirrors; fi
   - pip install auth.credential --use-mirrors
   - pip install dirq --use-mirrors
   - pip install messaging --use-mirrors
@@ -15,8 +15,8 @@ install:
   - pip install amqplib --use-mirrors
   - pip install kombu --use-mirrors
   - pip install pep8 --use-mirrors
+  - python setup.py install --no-data-files
 # command to run tests
 script:
   - pep8 bin/amqpclt test
   - python setup.py test
-  - python setup.py install --no-data-files
