@@ -47,10 +47,11 @@ class LocalTest(unittest.TestCase):
             bodies.append(body)
             mq1.add_message(Message(body=body))
         self.assertEqual(count, mq1.count())
-        cmd = "./bin/amqpclt --incoming-queue path=%s" \
+        cmd = "python bin/amqpclt --incoming-queue path=%s" \
               " --outgoing-queue path=%s --remove --debug 7" \
               % (mq1_path, mq2_path)
-        tu.timed_process(cmd.split())
+        (ret, out, err) = tu.timed_process(cmd.split())
+        self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
         mq2 = DQS(path=mq2_path)
         for i in mq2:
             if mq2.lock(i):

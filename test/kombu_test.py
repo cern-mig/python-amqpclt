@@ -57,7 +57,7 @@ class PikaTest(unittest.TestCase):
             msg.header = {"destination": dest}
             mq1.add_message(msg)
         self.assertEqual(count, mq1.count())
-        cmd1 = "./bin/amqpclt --incoming-queue path=%s" \
+        cmd1 = "python bin/amqpclt --incoming-queue path=%s" \
                " --outgoing-broker-uri %s " \
                " --outgoing-broker-module kombu " \
                " --outgoing-broker-auth plain,name=guest,pass=guest" \
@@ -65,7 +65,7 @@ class PikaTest(unittest.TestCase):
                % (mq1_path, self.broker)
         (ret, out, err) = tu.timed_process(cmd1.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
-        cmd2 = "./bin/amqpclt --incoming-broker-uri %s" \
+        cmd2 = "python bin/amqpclt --incoming-broker-uri %s" \
                " --incoming-broker-module kombu" \
                " --incoming-broker-auth plain,name=guest,pass=guest" \
                " --subscribe destination=%s" \

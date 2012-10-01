@@ -1,3 +1,11 @@
+import sys
+
+_no_data_files = "--no-data-files"
+no_data_files = False
+if _no_data_files in sys.argv:
+    no_data_files = True
+    sys.argv.remove(_no_data_files)
+
 NAME = "amqpclt"
 VERSION = "0.4"
 DESCRIPTION = "Versatile AMQP client"
@@ -30,15 +38,26 @@ CLASSIFIERS = [
 
 from distutils.core import setup, Command
 
+
 class test(Command):
     user_options = []
+
     def initialize_options(self):
         pass
+
     def finalize_options(self):
         pass
+
     def run(self):
         from test import run_tests
         run_tests.main()
+
+if no_data_files:
+    data_files = []
+else:
+    data_files = [
+        ('/usr/share/man/man1', ['man/amqpclt.1']),
+    ]
 
 setup(name=NAME,
       version=VERSION,
@@ -52,9 +71,6 @@ setup(name=NAME,
       classifiers=CLASSIFIERS,
       packages=list(),
       scripts=['bin/amqpclt', ],
-      data_files=[
-                  ('/usr/share/man/man1', ['man/amqpclt.1']),
-                  ],
-#      requires=['pika (>=0.9.5)', 'kombu (>=1.1.3)', 'messaging', 'dirq', ],
-      cmdclass={'test' : test},
-     )
+      data_files=data_files,
+      #requires=['pika (>=0.9.5)', 'kombu (>=1.1.3)', 'messaging', 'dirq', ],
+      cmdclass={'test': test}, )
