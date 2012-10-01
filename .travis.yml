@@ -1,0 +1,22 @@
+language: python
+python:
+  - "2.5"
+  - "2.6"
+  - "2.7"
+# command to install dependencies
+install:
+  - pip install simplejson --use-mirrors || echo "ok"
+  - pip install ssl --use-mirrors || echo "ok"
+  - pip install auth.credential --use-mirrors
+  - pip install dirq --use-mirrors
+  - pip install messaging --use-mirrors
+  - pip install pika --use-mirrors
+  - pip install anyjson --use-mirrors
+  - pip install amqplib --use-mirrors
+  - pip install kombu --use-mirrors
+  - pip install pep8 --use-mirrors
+# command to run tests
+script:
+  - pep8 bin/amqpclt test
+  - python setup.py test
+  - python setup.py install --no-data-files
