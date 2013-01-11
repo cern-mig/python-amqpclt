@@ -124,7 +124,7 @@
 .\" ========================================================================
 .\"
 .IX Title "AMQPCLT 1"
-.TH AMQPCLT 1 "2012-10-01" "" "amqpclt man page"
+.TH AMQPCLT 1 "2013-01-11" "" "amqpclt man page"
 .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
 .\" way too many mistakes in technical documents.
 .if n .ad l
@@ -489,14 +489,14 @@ Here is an example of a configuration file for a message receiver
 To run it as a daemon:
 .PP
 .Vb 1
-\&    $ amqpclt \-\-config test.conf \-\-daemon
+\&    $ amqpclt \-\-conf test.conf \-\-daemon
 .Ve
 .PP
 To use the configuration file above with some options
 on the command line to drain the queues:
 .PP
 .Vb 1
-\&    $ amqpclt \-\-config test.conf \-\-timeout\-inactivity 10
+\&    $ amqpclt \-\-conf test.conf \-\-timeout\-inactivity 10
 .Ve
 .SS "\s-1TAPPING\s0"
 .IX Subsection "TAPPING"
@@ -519,8 +519,8 @@ It also shows how to use the \-\-callback\-data option:
 Callback data must be given to specify which message queue to use:
 .PP
 .Vb 1
-\&    $ amqpclt \-\-config tap.conf \-\-callback\-data "/tmp/tap,DQS"
+\&    $ amqpclt \-\-conf tap.conf \-\-callback\-data "/tmp/tap,DQS"
 .Ve
 .SH "AUTHOR"
 .IX Header "AUTHOR"
-Massimo Paladin <massimo.paladin@gmail.com> \- Copyright (C) 2012 \s-1CERN\s0
+Massimo Paladin <massimo.paladin@gmail.com> \- Copyright (C) 2013 \s-1CERN\s0

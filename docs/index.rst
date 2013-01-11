@@ -368,12 +368,12 @@ Here is an example of a configuration file for a message receiver
 
 To run it as a daemon::
 
-    $ amqpclt --config test.conf --daemon
+    $ amqpclt --conf test.conf --daemon
 
 To use the configuration file above with some options
 on the command line to drain the queues::
 
-    $ amqpclt --config test.conf --timeout-inactivity 10
+    $ amqpclt --conf test.conf --timeout-inactivity 10
 
 
 TAPPING
@@ -396,12 +396,12 @@ It also shows how to use the --callback-data option::
 
 Callback data must be given to specify which message queue to use::
 
-    $ amqpclt --config tap.conf --callback-data "/tmp/tap,DQS"
+    $ amqpclt --conf tap.conf --callback-data "/tmp/tap,DQS"
 
 
 AUTHOR
 ------
 
-Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2012 CERN
+Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2013 CERN
 
 

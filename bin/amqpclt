@@ -18,6 +18,9 @@ import traceback
 import urllib
 import uuid
 
+import logging
+logging.basicConfig()
+
 try:
     import simplejson as json
 except ImportError:
@@ -46,7 +49,7 @@ TO_SYSLOG = False
 
 PROG = "amqpclt"
 AUTHOR = "Massimo Paladin <massimo.paladin@gmail.com>"
-COPYRIGHT = "Copyright (C) 2012 CERN"
+COPYRIGHT = "Copyright (C) 2013 CERN"
 VERSION = "0.4"
 DATE = "26 September 2012"
 SHORT_DESCRIPTION = "versatile AMQP client"
@@ -249,12 +252,12 @@ Here is an example of a configuration file for a message receiver
 
 To run it as a daemon::
 
-    $ amqpclt --config test.conf --daemon
+    $ amqpclt --conf test.conf --daemon
 
 To use the configuration file above with some options
 on the command line to drain the queues::
 
-    $ amqpclt --config test.conf --timeout-inactivity 10
+    $ amqpclt --conf test.conf --timeout-inactivity 10
 """,
     "SHOVELING": """
 Here is an example of a configuration file for a message shoveler
@@ -298,7 +301,7 @@ It also shows how to use the --callback-data option::
 
 Callback data must be given to specify which message queue to use::
 
-    $ amqpclt --config tap.conf --callback-data "/tmp/tap,DQS"
+    $ amqpclt --conf tap.conf --callback-data "/tmp/tap,DQS"
 """}
 
 ARGUMENTS = {
@@ -1015,6 +1018,7 @@ def _parse_subscribe_destination(entity):
     """ Parse subscribe destination. """
     entity = entity.encode()
     destination = dict()
+    destination["original"] = entity
     if entity.startswith("/queue/"):
         destination["exchange"] = {"name": ""}
         destination["queue"] = {"name": entity[7:],
@@ -1043,7 +1047,7 @@ def _parse_subscribe_destination(entity):
 
 
 _AMQP_RE = re.compile(
-    r'^amqp://'
+    r'^(amqp|tcp)://'
     '((?P<host>[^/:]*)([:](?P<port>[^/]*))?)'
     '/(?P<virtual_host>.*)/?')
 
@@ -1372,6 +1376,66 @@ class KombuAdapter(object):
         return "RabbitMQ"
 
 
+class StompestAdapter(object):
+    """ Stompest library adapter. """
+    direction = "unknown"
+
+    def __init__(self):
+        """ Initialize Stompest adapter """
+        if "stompest" not in globals():
+            global stompest
+            import stompest.config
+            import stompest.protocol.spec
+            import stompest.sync
+        stompest.protocol.StompSpec.DEFAULT_VERSION = \
+            stompest.protocol.StompSpec.VERSION_1_1
+        self._connection = None
+
+    def connect(self):
+        """ Create a STOMP connection. """
+        direction = self.direction
+        config = CONFIG[direction]["broker"]
+        params = _parse_amqp_uri(config["uri"])
+        cred = config.get("auth")
+        if cred is None:
+            cred = credential.new(scheme="none")
+        if cred.scheme == "x509":
+            raise AmqpcltError(
+                "x509 authentication not supported in stompest")
+        elif cred.scheme == "plain":
+            extra = {
+                "login": cred['name'],
+                "passcode": cred['pass'], }
+        else:
+            # none
+            extra = dict()
+        self._config = stompest.config.StompConfig(
+            "tcp://%s:%s" %
+            (params['host'], params['port']),
+            **extra)
+        self._connection = stompest.sync.Stomp(self._config)
+        timeout_connect = _treeval(CONFIG, "timeout-connect")
+        self._connect_options = {
+            "host": params['host'],
+            "connectTimeout": timeout_connect,
+            "connectedTimeout": timeout_connect,
+        }
+        self._connection.connect(**self._connect_options)
+        log_debug("%s broker %s:%s: %s" %
+                  (direction, params['host'], params['port'],
+                  self.amqp_type(),), 1)
+        if _treeval(CONFIG, "%s-broker-type" % direction) is None:
+            _treeset(CONFIG,
+                     "%s-broker-type" % direction, self.amqp_type())
+        return True
+
+    def amqp_type(self):
+        """ Return the broker type. """
+        if self._connection is None:
+            return None
+        return "Dummy"
+
+
 class PikaIncomingBroker(PikaAdapter):
     """ Pika incoming broker object. """
     direction = "incoming"
@@ -1565,6 +1629,88 @@ class KombuIncomingBroker(KombuAdapter):
         self._connection = None
 
 
+class StompestIncomingBroker(StompestAdapter):
+    """ Stompest incoming broker object. """
+    direction = "incoming"
+
+    def __init__(self):
+        """ Initialize incoming broker module. """
+        super(StompestIncomingBroker, self).__init__()
+        self._msgbuf = list()
+        self._pending = dict()
+        self._consume = dict()
+
+    def _maybe_subscribe(self, subscription):
+        """ May be subscribe to queue. """
+        destination = subscription["original"]
+        if destination not in self._consume:
+            log_debug(
+                "incoming consume from destination: %s" % (destination, ), 3)
+            tag = get_uuid()
+            params = {"id": tag, }
+            if CONFIG["reliable"]:
+                params['ack'] = 'client'
+            else:
+                params['ack'] = 'auto'
+            self._connection.subscribe(destination, params)
+            self._consume[destination] = tag
+
+    def start(self):
+        """ Start the incoming broker module. """
+        self.connect()
+        for sub in CONFIG.get("subscribe", []):
+            self._maybe_subscribe(sub)
+
+    def _read_to_buf(self):
+        """ Read messages into buffer. """
+        while self._connection.canRead(0):
+            frame = self._connection.receiveFrame()
+            self._msgbuf.append(frame)
+
+    def get(self):
+        """ Get a message. """
+        if len(self._msgbuf) == 0:
+            self._read_to_buf()
+        if len(self._msgbuf) == 0:
+            return ("no messages received", None)
+        frame = self._msgbuf.pop(0)
+        header = frame.headers
+        body = frame.body
+        msg_id = header["message-id"]
+        if header.get('content_type', None) is not None and \
+            (header['content_type'].startswith("text/") or
+             "charset=" in header['content_type']):
+            body = body.decode("utf-8")
+        for header_name, header_value in header.items():
+            try:
+                header[header_name] = header_value.encode("utf-8")
+            except UnicodeDecodeError:
+                header[header_name] = header_value.decode("utf-8")
+        msg = Message(header=header, body=body)
+        if CONFIG["reliable"]:
+            self._pending[msg_id] = frame
+            return (msg, msg_id)
+        else:
+            return (msg, None)
+
+    def ack(self, msg_id):
+        """ Ack a message. """
+        log_debug("acking incoming message: %s" % msg_id, 3)
+        self._connection.ack(self._pending[msg_id])
+        del(self._pending[msg_id])
+
+    def idle(self):
+        """ Idle. """
+        self._read_to_buf()
+
+    def stop(self):
+        """ Stop. """
+        for _, token in self._consume.items():
+            self._connection.unsubscribe(('id', token))
+        self._connection.disconnect()
+        self._connection = None
+
+
 class IncomingQueue(object):
     """ Incoming queue object. """
 
@@ -1627,7 +1773,9 @@ class IncomingQueue(object):
         msg = self._queue.get_message(elt)
         if CONFIG["reliable"]:
             return (msg, elt)
+        # otherwise not reliable
         if CONFIG["remove"]:
+            log_debug("removing message %s/%s" % (self._path, elt), 5)
             self._queue.remove(elt)
         else:
             self._queue.unlock(elt)
@@ -1635,7 +1783,7 @@ class IncomingQueue(object):
 
     def ack(self, msg_id):
         """ Ack a message. """
-        if CONFIG["remove"] is not None:
+        if CONFIG["remove"]:
             log_debug("incoming message remove %s/%s" %
                       (self._path, msg_id), 3)
             self._queue.remove(msg_id)
@@ -1800,6 +1948,69 @@ class KombuOutgoingBroker(KombuAdapter):
         """ Stop. """
         self._connection.close()
         self._channel = None
+        self._connection = None
+
+
+class StompestOutgoingBroker(StompestAdapter):
+    """ Stompest outgoing broker object. """
+    direction = "outgoing"
+
+    def __init__(self):
+        """ Initialize the outgoing broker module. """
+        super(StompestOutgoingBroker, self).__init__()
+
+    def start(self):
+        """ Start the outgoing broker module. """
+        self.connect()
+
+    def put(self, msg, msg_id=None):
+        """ Put a message. """
+        # Send the message
+        if "destination" not in msg.header:
+            raise AmqpcltError("message doesn't have a destination: %s" % msg)
+        if "content-type" in msg.header:
+            content_type = msg.header["content-type"]
+            if content_type.startswith("text/") or \
+                    "charset=" in content_type:
+                if not msg.is_text():
+                    raise AmqpcltError("unexpected text content-type "
+                                       "for binary message: %s" % content_type)
+            else:
+                if msg.is_text():
+                    raise AmqpcltError("unexpected binary content-type for "
+                                       "text message: %s" % content_type)
+        extra = dict()
+        if CONFIG['reliable']:
+            extra['receipt'] = get_uuid()
+        self._connection.send(
+            destination=msg.header['destination'],
+            body=msg.body,
+            headers=msg.header,
+            **extra)
+        if CONFIG['reliable']:
+            log_debug("waiting for receipt: %s" % (extra['receipt'], ), 5)
+            received = self._connection.canRead(5)
+            if received:
+                frame = self._connection.receiveFrame()
+                if (frame.command != "RECEIPT" or
+                        frame.headers.get("receipt-id", None) !=
+                        extra['receipt']):
+                    raise AmqpcltError("wrong receipt received for: %s" % msg)
+                log_debug("receipt received: %s" % (extra['receipt'], ), 5)
+            else:
+                raise AmqpcltError("receipt not received for %s" % msg)
+        if msg_id is None:
+            return list()
+        else:
+            return [msg_id, ]
+
+    def idle(self):
+        """ Idle. """
+        return list()
+
+    def stop(self):
+        """ Stop. """
+        self._connection.disconnect()
         self._connection = None
 
 
@@ -2085,6 +2296,8 @@ def work():
             incoming = KombuIncomingBroker()
         elif mtype == "pika":
             incoming = PikaIncomingBroker()
+        elif mtype == "stompest":
+            incoming = StompestIncomingBroker()
         else:
             raise AmqpcltError("invalid incoming broker module: %s" % (mtype))
     else:
@@ -2095,6 +2308,8 @@ def work():
             outgoing = KombuOutgoingBroker()
         elif mtype == "pika":
             outgoing = PikaOutgoingBroker()
+        elif mtype == "stompest":
+            outgoing = StompestOutgoingBroker()
         else:
             raise AmqpcltError("invalid outgoing broker module: %s" % (mtype))
     else:
