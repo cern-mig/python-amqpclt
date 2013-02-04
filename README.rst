@@ -2,6 +2,8 @@
 amqpclt
 =======
 
+.. image:: https://secure.travis-ci.org/mpaladin/python-amqpclt.png?branch=master
+
 Overview
 ========
 
