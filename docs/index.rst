@@ -69,10 +69,7 @@ OPTIONS
 	process at most the given number of messages; note: when using an incoming broker, to avoid consuming more messages, it is recommended to enable the --reliable option
 
 **--daemon**
-	detach **amqpclt** so that it becomes a daemon running in the background; debug, warning and error messages will get sent to syslog
-
-**--debug** *DEBUG*
-	show debugging information, get an integer valueas debug value
+	detach **amqpclt** so that it becomes a daemon running in the background
 
 **--duration** *SECONDS*
 	process messages during at most the given number of seconds and then stop
@@ -97,6 +94,15 @@ OPTIONS
 
 **--lazy**
 	initialize the outgoing module only after having received the first message
+
+**--log** *STRING*
+	select logging system, one of: stdout, syslog, file, null
+
+**--logfile** *STRING*
+	select logging file if log system file is selected
+
+**--loglevel** *STRING*
+	select logging level, one of: debug, info, warning and error
 
 **--loop**
 	when using an incoming message queue, loop over it

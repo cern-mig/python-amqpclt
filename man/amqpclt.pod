@@ -99,11 +99,7 @@ process at most the given number of messages; note: when using an incoming broke
 
 =item B<--daemon>
 
-detach B<amqpclt> so that it becomes a daemon running in the background; debug, warning and error messages will get sent to syslog
-
-=item B<--debug> I<DEBUG>
-
-show debugging information, get an integer valueas debug value
+detach B<amqpclt> so that it becomes a daemon running in the background
 
 =item B<--duration> I<SECONDS>
 
@@ -136,6 +132,18 @@ read incoming messages from the given message queue (see :py:mod:`messaging.queu
 =item B<--lazy>
 
 initialize the outgoing module only after having received the first message
+
+=item B<--log> I<STRING>
+
+select logging system, one of: stdout, syslog, file, null
+
+=item B<--logfile> I<STRING>
+
+select logging file if log system file is selected
+
+=item B<--loglevel> I<STRING>
+
+select logging level, one of: debug, info, warning and error
 
 =item B<--loop>
 

@@ -247,7 +247,7 @@ texinfo_documents = [
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {'http://docs.python.org/': None,
-    'dirq' : ('http://mpaladin.web.cern.ch/mpaladin/python/dirq/', None),
-    'messaging' : ('http://mpaladin.web.cern.ch/mpaladin/python/messaging/', None),
-    'auth.credential' : ('http://mpaladin.web.cern.ch/mpaladin/python/auth.credential/', None),
+    'dirq' : ('https://dirq.readthedocs.org/en/latest/', None),
+    'messaging' : ('https://messaging.readthedocs.org/en/latest/', None),
+    'auth.credential' : ('https://authcredential.readthedocs.org/en/latest/', None),
 }

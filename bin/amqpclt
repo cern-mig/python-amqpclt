@@ -45,10 +45,6 @@ CONFIG = dict()
 TO_SYSLOG = False
 
 PROG = "amqpclt"
-AUTHOR = "Massimo Paladin <massimo.paladin@gmail.com>"
-COPYRIGHT = "Copyright (C) 2013 CERN"
-VERSION = "0.4"
-DATE = "26 September 2012"
 SHORT_DESCRIPTION = "versatile AMQP client"
 DESCRIPTION = """
 **amqpclt** is a versatile tool to interact with messaging brokers speaking
@@ -497,7 +493,7 @@ ARGUMENTS = {
     "version": {
         "long": "--version",
         "action": "version",
-        "version": "%s %s" % (PROG, VERSION),
+        "version": "%s %s" % (PROG, amqpclt.VERSION),
         "help": "print the program version"},
     "window": {
         "long": "--window",
@@ -523,7 +519,7 @@ def print_rst():
     """ Print the rst for the web page. """
     out = "%s\n" % PROG
     out += "===================\n\n"
-    out += "%s %s - %s\n\n" % (PROG, VERSION, SHORT_DESCRIPTION,)
+    out += "%s %s - %s\n\n" % (PROG, amqpclt.VERSION, SHORT_DESCRIPTION,)
     out += "SYNOPSIS\n"
     out += "--------\n\n"
     out += "**%s** *[OPTIONS]*\n\n" % PROG
@@ -551,7 +547,8 @@ def print_rst():
     for title, text in [("CONFIGURATION FILE", CONFIGURATION_FILE),
                         ("CALLBACK", CALLBACK_GUIDE),
                         ("EXAMPLES", EXAMPLES),
-                        ("AUTHOR", "%s - %s" % (AUTHOR, COPYRIGHT))]:
+                        ("AUTHOR", "%s - %s" %
+                         (amqpclt.AUTHOR, amqpclt.COPYRIGHT))]:
         if title == "EXAMPLES":
             out += "%s\n%s\n\n" % (title, len(title) * "-")
             for stitle, example in text.items():
@@ -567,7 +564,7 @@ def print_rst():
 def print_pod():
     """ Print the pod for the man page. """
     out = "=head1 NAME\n\n"
-    out += "%s %s - %s\n\n" % (PROG, VERSION, SHORT_DESCRIPTION,)
+    out += "%s %s - %s\n\n" % (PROG, amqpclt.VERSION, SHORT_DESCRIPTION,)
     out += "=head1 SYNOPSIS\n\n"
     out += "B<%s> I<[OPTIONS]>\n\n" % PROG
     out += "=head1 DESCRIPTION\n\n"
@@ -593,7 +590,8 @@ def print_pod():
     for title, text in [("CONFIGURATION FILE", CONFIGURATION_FILE),
                         ("CALLBACK", CALLBACK_GUIDE),
                         ("EXAMPLES", EXAMPLES),
-                        ("AUTHOR", "%s - %s" % (AUTHOR, COPYRIGHT))]:
+                        ("AUTHOR", "%s - %s" %
+                         (amqpclt.AUTHOR, amqpclt.COPYRIGHT))]:
         if title == "EXAMPLES":
             out += "=head1 %s\n\n" % (title, )
             for stitle, example in text.items():
@@ -619,7 +617,7 @@ def get_parser():
     """ Create the parser. """
     parser = argparse.ArgumentParser(
         prog=PROG,
-        epilog="AUTHOR\n\n%s - %s" % (AUTHOR, COPYRIGHT),
+        epilog="AUTHOR\n\n%s - %s" % (amqpclt.AUTHOR, amqpclt.COPYRIGHT),
         argument_default=argparse.SUPPRESS,
         formatter_class=lambda prog:
         argparse.RawDescriptionHelpFormatter(

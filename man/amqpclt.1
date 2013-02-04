@@ -124,7 +124,7 @@
 .\" ========================================================================
 .\"
 .IX Title "AMQPCLT 1"
-.TH AMQPCLT 1 "2013-01-11" "" "amqpclt man page"
+.TH AMQPCLT 1 "2013-02-04" "" "amqpclt man page"
 .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
 .\" way too many mistakes in technical documents.
 .if n .ad l
@@ -191,10 +191,7 @@ use the given configuration file, see theCONFIGURATION \s-1FILE\s0 section for m
 process at most the given number of messages; note: when using an incoming broker, to avoid consuming more messages, it is recommended to enable the \-\-reliable option
 .IP "\fB\-\-daemon\fR" 4
 .IX Item "--daemon"
-detach \fBamqpclt\fR so that it becomes a daemon running in the background; debug, warning and error messages will get sent to syslog
-.IP "\fB\-\-debug\fR \fI\s-1DEBUG\s0\fR" 4
-.IX Item "--debug DEBUG"
-show debugging information, get an integer valueas debug value
+detach \fBamqpclt\fR so that it becomes a daemon running in the background
 .IP "\fB\-\-duration\fR \fI\s-1SECONDS\s0\fR" 4
 .IX Item "--duration SECONDS"
 process messages during at most the given number of seconds and then stop
@@ -219,6 +216,15 @@ read incoming messages from the given message queue (see :py:mod:`messaging.queu
 .IP "\fB\-\-lazy\fR" 4
 .IX Item "--lazy"
 initialize the outgoing module only after having received the first message
+.IP "\fB\-\-log\fR \fI\s-1STRING\s0\fR" 4
+.IX Item "--log STRING"
+select logging system, one of: stdout, syslog, file, null
+.IP "\fB\-\-logfile\fR \fI\s-1STRING\s0\fR" 4
+.IX Item "--logfile STRING"
+select logging file if log system file is selected
+.IP "\fB\-\-loglevel\fR \fI\s-1STRING\s0\fR" 4
+.IX Item "--loglevel STRING"
+select logging level, one of: debug, info, warning and error
 .IP "\fB\-\-loop\fR" 4
 .IX Item "--loop"
 when using an incoming message queue, loop over it
