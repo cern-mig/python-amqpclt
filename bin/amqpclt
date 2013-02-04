@@ -3,35 +3,32 @@
 amqpclt
 """
 import argparse
-import datetime
 import os
 import pprint
 import re
 import signal
 import socket
-from subprocess import Popen, PIPE
 import ssl
 import sys
 import syslog
 import time
-import traceback
 import urllib
-import uuid
+
+import amqpclt
+
+from mtb.conf import read_apache_config, TreeDict
+from mtb.log import log_warning, log_error, log_debug
+import mtb.log as log
+from mtb.modules import md5_hash
+from mtb.pid import \
+    pid_read, pid_touch, pid_write, pid_check, pid_quit, \
+    pid_status, pid_remove
+from mtb.proc import daemonize
+from mtb.string import get_uuid
+from mtb.validation import mutex, reqall, reqany
 
 import logging
 logging.basicConfig()
-
-try:
-    import simplejson as json
-except ImportError:
-    import json
-
-try:
-    import hashlib
-    md5_hash = hashlib.md5
-except ImportError:
-    import md5
-    md5_hash = md5.md5
 
 from warnings import simplefilter
 simplefilter("ignore")
@@ -321,27 +318,37 @@ ARGUMENTS = {
                 "message, see the \"CALLBACK\" section for more "
                 "information",
         "metavar": "PATH", },
-    "conf": {"long": "--conf",
-             "help": "use the given configuration file, see the"
-                     "CONFIGURATION FILE section for more information",
-             "metavar": "PATH", },
-    "count": {"long": "--count",
-              "short": "-c",
-              "type": int,
-              "help": "process at most the given number of messages; "
-                      "note: when using an incoming broker, to avoid "
-                      "consuming more messages, it is recommended to "
-                      "enable the --reliable option",
-              "metavar": "INTEGER", },
-    "daemon": {"long": "--daemon",
-               "action": "store_true",
-               "help": "detach **amqpclt** so that it becomes a daemon "
-                       "running in the background; debug, warning and error "
-                       "messages will get sent to syslog", },
-    "debug": {"long": "--debug",
-              "type": int,
-              "help": "show debugging information, get an integer value"
-                      "as debug value", },
+    "conf": {
+        "long": "--conf",
+        "help": "use the given configuration file, see the"
+                "CONFIGURATION FILE section for more information",
+        "metavar": "PATH", },
+    "count": {
+        "long": "--count",
+        "short": "-c",
+        "type": int,
+        "help": "process at most the given number of messages; "
+                "note: when using an incoming broker, to avoid "
+                "consuming more messages, it is recommended to "
+                "enable the --reliable option",
+        "metavar": "INTEGER", },
+    "daemon": {
+        "long": "--daemon",
+        "action": "store_true",
+        "help": "detach **amqpclt** so that it becomes a daemon "
+                "running in the background", },
+    "log": {
+        "long": "--log",
+        "help": "select logging system, one of: stdout, syslog, file, null",
+        "metavar": "STRING", },
+    "logfile": {
+        "long": "--logfile",
+        "help": "select logging file if log system file is selected",
+        "metavar": "STRING", },
+    "loglevel": {
+        "long": "--loglevel",
+        "help": "select logging level, one of: debug, info, warning and error",
+        "metavar": "STRING", },
     "duration": {
         "long": "--duration",
         "type": int,
@@ -353,10 +360,11 @@ ARGUMENTS = {
 #              "help": "enable AMQP heart-beats between **amqpclt** and "
 #                       "the broker(s)",
 #            },
-    "help": {"short": "-h",
-             "long": "--help",
-             "action": "help",
-             "help": "print the help page"},
+    "help": {
+        "short": "-h",
+        "long": "--help",
+        "action": "help",
+        "help": "print the help page"},
     "incoming-broker-auth": {
         "long": "--incoming-broker-auth",
         "help": "use this authentication string "
@@ -415,323 +423,100 @@ ARGUMENTS = {
     "pidfile": {"long": "--pidfile",
                 "help": "use this pid file",
                 "metavar": "PATH", },
-    "pod": {"long": "--pod",
-            "action": "store_true",
-            "help": "print the pod guide"},
-    "prefetch": {"long": "--prefetch",
-                 "type": int,
-                 "help": "set the prefetch value (i.e. the maximum number of "
-                         "messages to received without acknowledging them) on "
-                         "the incoming broker",
-                 "metavar": "INTEGER", },
-    "quit": {"long": "--quit",
-             "action": "store_true",
-             "help": "tell another instance of **amqpclt** (identified by "
-                     "its pid file, as specified by the --pidfile option) "
-                     "to quit", },
-    "reliable": {"long": "--reliable",
-                 "action": "store_true",
-                 "help": "use AMQP features for more reliable messaging "
-                         "(i.e. client side acknowledgments) at the "
-                         "cost of less performance", },
-    "remove": {"long": "--remove",
-               "action": "store_true",
-               "help": "when using an incoming message queue, remove the "
-                       "processed messages", },
-    "rst": {"long": "--rst",
-            "action": "store_true",
-            "help": "print the rst guide"},
-    "statistics": {"long": "--statistics",
-                   "action": "store_true",
-                   "help": "report statistics at the end of the execution", },
-    "status": {"long": "--status",
-               "action": "store_true",
-               "help": "get the status of another instance of **amqpclt** "
-                       "(identified by its pid file, as specified by the "
-                       "--pidfile option); the exit code will be zero if the "
-                       "instance is alive and non-zero otherwise", },
-    "subscribe": {"long": "--subscribe",
-                  "action": "append",
-                  "help": "use these options in the AMQP subscription used "
-                          "with the incoming broker; this option can be given "
-                          "multiple times",
-                  "metavar": "KEY=VALUE...", },
-    "timeout-connect": {"long": "--timeout-connect",
-                        "type": float,
-                        "help": "use this timeout when connecting to the"
-                                " broker; can be fractional",
-                        "metavar": "SECONDS", },
-    "timeout-inactivity": {"long": "--timeout-inactivity",
-                           "type": float,
-                           "help": "use this timeout in the incoming module "
-                                   "to stop  **amqpclt** when no new messages "
-                                   "have been received (aka drain mode); can "
-                                   "be fractional",
-                           "metavar": "SECONDS", },
-    "timeout-linger": {"long": "--timeout-linger",
-                       "type": float,
-                       "help": "when stopping **amqpclt**, use this timeout to"
-                               " finish interacting with the broker; can be "
-                               "fractional",
-                       "metavar": "SECONDS", },
-    "version": {"long": "--version",
-                "action": "version",
-                "version": "%s %s" % (PROG, VERSION),
-                "help": "print the program version"},
-    "window": {"long": "--window",
-               "type": int,
-               "help": "keep at most the given number of "
-                       "not-yet-acknowledged messages in memory",
-               "metavar": "INTEGER", },
+    "pod": {
+        "long": "--pod",
+        "action": "store_true",
+        "help": "print the pod guide"},
+    "prefetch": {
+        "long": "--prefetch",
+        "type": int,
+        "help": "set the prefetch value (i.e. the maximum number of "
+                "messages to received without acknowledging them) on "
+                "the incoming broker",
+        "metavar": "INTEGER", },
+    "quit": {
+        "long": "--quit",
+        "action": "store_true",
+        "help": "tell another instance of **amqpclt** (identified by "
+                "its pid file, as specified by the --pidfile option) "
+                "to quit", },
+    "reliable": {
+        "long": "--reliable",
+        "action": "store_true",
+        "help": "use AMQP features for more reliable messaging "
+                "(i.e. client side acknowledgments) at the "
+                "cost of less performance", },
+    "remove": {
+        "long": "--remove",
+        "action": "store_true",
+        "help": "when using an incoming message queue, remove the "
+                "processed messages", },
+    "rst": {
+        "long": "--rst",
+        "action": "store_true",
+        "help": "print the rst guide"},
+    "statistics": {
+        "long": "--statistics",
+        "action": "store_true",
+        "help": "report statistics at the end of the execution", },
+    "status": {
+        "long": "--status",
+        "action": "store_true",
+        "help": "get the status of another instance of **amqpclt** "
+                "(identified by its pid file, as specified by the "
+                "--pidfile option); the exit code will be zero if the "
+                "instance is alive and non-zero otherwise", },
+    "subscribe": {
+        "long": "--subscribe",
+        "action": "append",
+        "help": "use these options in the AMQP subscription used "
+                "with the incoming broker; this option can be given "
+                "multiple times",
+        "metavar": "KEY=VALUE...", },
+    "timeout-connect": {
+        "long": "--timeout-connect",
+        "type": float,
+        "help": "use this timeout when connecting to the"
+                " broker; can be fractional",
+        "metavar": "SECONDS", },
+    "timeout-inactivity": {
+        "long": "--timeout-inactivity",
+        "type": float,
+        "help": "use this timeout in the incoming module "
+                "to stop  **amqpclt** when no new messages "
+                "have been received (aka drain mode); can "
+                "be fractional",
+        "metavar": "SECONDS", },
+    "timeout-linger": {
+        "long": "--timeout-linger",
+        "type": float,
+        "help": "when stopping **amqpclt**, use this timeout to"
+                " finish interacting with the broker; can be "
+                "fractional",
+        "metavar": "SECONDS", },
+    "version": {
+        "long": "--version",
+        "action": "version",
+        "version": "%s %s" % (PROG, VERSION),
+        "help": "print the program version"},
+    "window": {
+        "long": "--window",
+        "type": int,
+        "help": "keep at most the given number of "
+                "not-yet-acknowledged messages in memory",
+        "metavar": "INTEGER", },
 }
 
-DEFAULT_OPTIONS = {"daemon": False,
-                   "debug": 0,
-                   #"heartbeat": False,
-                   "lazy": False,
-                   "loop": False,
-                   "remove": False,
-                   "reliable": False,
-                   "statistics": False, }
-
-
-###################################### BEGIN COMMON CODE
-#### Daemon helper
-def daemonize():
-    """ Daemonize. UNIX double fork mechanism. """
-    try:
-        pid = os.fork()
-        if pid > 0:
-            # exit first parent
-            sys.exit(0)
-    except OSError:
-        error = sys.exc_info()[1]
-        sys.stderr.write("fork #1 failed: %d (%s)\n"
-                         % (error.errno, error.strerror))
-        sys.exit(1)
-    # decouple from parent environment
-    os.chdir('/')
-    os.setsid()
-    os.umask(0)
-    # do second fork
-    try:
-        pid = os.fork()
-        if pid > 0:
-            # exit from second parent
-            sys.exit(0)
-    except OSError:
-        error = sys.exc_info()[1]
-        sys.stderr.write("fork #2 failed: %d (%s)\n"
-                         % (error.errno, error.strerror))
-        sys.exit(1)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    stdin = open(os.devnull, 'r')
-    stdout = open(os.devnull, 'a+')
-    stderr = open(os.devnull, 'a+')
-    os.dup2(stdin.fileno(), sys.stdin.fileno())
-    os.dup2(stdout.fileno(), sys.stdout.fileno())
-    os.dup2(stderr.fileno(), sys.stderr.fileno())
-
-
-#### PID helpers
-class PIDError(Exception):
-    """ PID related errors. """
-
-
-def pid_read(path, action=False):
-    """ Return the pid content. """
-    content = (None, None)
-    if not os.path.exists(path):
-        if action:
-            return ("", None)
-        return ""
-    try:
-        pid_file = open(path, "r")
-        pid_content = pid_file.readlines()
-        if len(pid_content) == 1:
-            content = (int(pid_content[0]), None)
-        else:
-            content = (int(pid_content[0]), pid_content[1].strip())
-    except IOError:
-        error = sys.exc_info()[1]
-        raise IOError("cannot read pidfile %s: %s" % (path, error))
-    else:
-        pid_file.close()
-    if action:
-        return content
-    return content[0]
-
-
-def pid_touch(path):
-    """ Touch the pid. """
-    try:
-        os.utime(path, None)
-    except OSError:
-        raise OSError("cannot utime pidfile %s" % path)
-    else:
-        return True
-
-
-def pid_write(path, pid, action=None, excl=False):
-    """ Write content to the pid. """
-    try:
-        if excl:
-            mode = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        else:
-            mode = os.O_WRONLY | os.O_CREAT
-        pid_file = os.open(path, mode)
-        content = "%s\n" % pid
-        if action is not None:
-            content += "%s\n" % action
-        os.write(pid_file, content)
-    except IOError:
-        error = sys.exc_info()[1]
-        raise IOError("cannot write to %s: %s" % (path, error.strerror))
-    except OSError:
-        error = sys.exc_info()[1]
-        raise IOError("cannot open pidfile %s: %s" %
-                      (path, error.strerror))
-    else:
-        os.close(pid_file)
-        return pid
-    return None
-
-
-def pid_check(path):
-    """ Check the pid content and return the action if present. """
-    (pid, action) = pid_read(path, True)
-    if pid is None:
-        return
-    if not pid:
-        raise PIDError("lost or corrupted pid file: %s\n" % path)
-    if pid != os.getpid():
-        raise PIDError("pidfile has been taken by another pid: %s\n" % pid)
-    if action is None:
-        return ""
-    return action
-
-
-def pid_quit(path, program=""):
-    """ Write quit to the pid. """
-    pid = pid_read(path)
-    if pid is None:
-        return
-    if pid:
-        if program:
-            print("%s (pid %d) is being told to quit..." %
-                  (program, pid))
-        if pid_write(path, pid, "quit") is None:
-            return
-        for _ in range(5):
-            try:
-                os.kill(pid, 0)
-                time.sleep(1)
-            except OSError:
-                break
-        try:
-            os.kill(pid, 0)
-            if program:
-                print("%s (pid %d) is still running, killing it now...\n" %
-                      (program, pid))
-            signals = [signal.SIGTERM, signal.SIGINT,
-                       signal.SIGQUIT, signal.SIGKILL]
-            for sig in signals:
-                try:
-                    os.kill(pid, sig)
-                except OSError:
-                    log_warning("cannot kill(%d, %d)" % (pid, sig))
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    break
-                time.sleep(1)
-            try:
-                os.kill(pid, 0)
-                raise PIDError("could not kill %d" % pid)
-            except OSError:
-                if program:
-                    print("%s (pid %d) has been successfully killed\n" %
-                          (program, pid))
-        except OSError:
-            if program:
-                print("%s (pid %d) does not seem to be running anymore" %
-                      (program, pid))
-    elif program:
-        print ("%s does not seem to be running" % (program, ))
-    if os.path.isfile(path):
-        try:
-            log_warning("removing pid file %s\n" % path)
-            os.remove(path)
-        except OSError:
-            raise PIDError("failed to remove pid file: %s" % path)
-    return pid
-
-
-def pid_status(path, maxage=None):
-    """ Return the pid status. """
-    pid = pid_read(path)
-    if pid is None:
-        return (None, None)
-    if not pid:
-        return (3, "does not seem to be running")
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return (3, "pid %s does not seem to be running anymore" % pid)
-    if maxage is None:
-        return (0, "seems to be running")
-    try:
-        stat = os.stat(path)
-    except OSError:
-        return (3, "(pid %d) does not have its pidfile anymore" % pid)
-    fileage = time.time() - stat.st_mtime
-    mdate = datetime.datetime.fromtimestamp(stat.st_mtime)
-    if fileage > maxage:
-        return (1, "(pid %d) is not running since %s" % (pid, mdate))
-    return (0, "(pid %d) was active on %s" % (pid, mdate))
-
-
-def pid_remove(path):
-    """ Remove the pidfile. """
-    pid = pid_read(path)
-    if pid is None:
-        return
-    if os.getpid() != pid:
-        return
-    try:
-        os.remove(path)
-    except OSError:
-        error = sys.exc_info()[1]
-        raise OSError("cannot remove pidfile %s: %s" % (path, error))
-    else:
-        return pid
-
-
-def log_exceptions(re_raise=True):
-    """
-    Log exceptions to configured log and re raise the exception or exit.
-    """
-    def out_function(in_function):
-        """ Wrap function. """
-        def out_function(*args, **kwargs):
-            """ Wrapping and catching exceptions. """
-            __name__ = in_function.__name__
-            try:
-                in_function(*args, **kwargs)
-            except SystemExit:
-                raise sys.exc_info()[1]
-            except Exception:
-                (_, error, error_tb) = sys.exc_info()
-                log_debug("%s" % (" ".join(traceback.format_tb(error_tb)),))
-                log_error("%s" % (error,))
-                if re_raise:
-                    raise error
-                else:
-                    sys.exit(1)
-        return out_function
-    return out_function
-###################################### END COMMON CODE
+DEFAULT_OPTIONS = {
+    "daemon": False,
+    "log": "stdout",
+    "loglevel": "warning",
+    #"heartbeat": False,
+    "lazy": False,
+    "loop": False,
+    "remove": False,
+    "reliable": False,
+    "statistics": False, }
 
 
 def print_rst():
@@ -823,120 +608,11 @@ def print_pod():
     print(out)
 
 
-### Configuration helpers
-def _normalize_bool(tree):
-    """ Normalize the dict. """
-    for key, value in tree.items():
-        if type(value) == dict:
-            _normalize_bool(value)
-        elif type(value) in [str, unicode]:
-            if value.lower() == "true":
-                tree[key] = True
-            elif value.lower() == "false":
-                tree[key] = False
-
-
-def read_apache_config(path):
-    """ Read Apache style config files. """
-    cmd = "perl -e 'use Config::General qw(ParseConfig);" + \
-          "use JSON qw(to_json);print(to_json({ParseConfig(" + \
-          "-ConfigFile => $ARGV[0])}))' %s" % (path, )
-    proc = Popen(cmd, stdout=PIPE, stderr=PIPE, shell=True)
-    out, err = proc.communicate()
-    if err:
-        raise ValueError(str(err).strip())
-    data = json.loads(out)
-    _normalize_bool(data)
-    return data
-
-
-_EXPLOSION_RE = re.compile("^(\w+)-(.+)$")
-
-
-def _explode_dict(given):
-    """ Explode all the keys having a "-". """
-    for key in given.keys():
-        match = _EXPLOSION_RE.match(key)
-        if match:
-            if match.group(1) in given:
-                given[match.group(1)].update(
-                    {match.group(2): given.pop(key)})
-            else:
-                given[match.group(1)] = {
-                    match.group(2): given.pop(key)}
-    for item in given.values():
-        if type(item) == dict:
-            _explode_dict(item)
-
-
-def _treeval(tree, name, default=None):
-    """ Return the value of the given option in an exploded dict. """
-    if type(tree) == dict and name in tree:
-        return tree[name]
-    match = _EXPLOSION_RE.match(name)
-    if match is None:
-        return default
-    if match.group(1) not in tree:
-        return default
-    return _treeval(tree[match.group(1)], match.group(2))
-
-
-def _treeset(tree, name, value):
-    """ Set the value in the tree. """
-    match = _EXPLOSION_RE.match(name)
-    if match is not None:
-        tree.setdefault(match.group(1), dict())
-        _treeset(tree[match.group(1)], match.group(2), value)
-    elif type(tree) == dict:
-        tree[name] = value
-    else:
-        raise AmqpcltError("cannot set %s in %s" % (name, tree))
-
-
 def _merge(first, second):
     """ Merge two dictionaries. """
     merge = first.copy()
     merge.update(second)
     return merge
-
-
-def mutex(tree, *options):
-    """ Given options must be mutually exclusive. """
-    found = None
-    for option in options:
-        if _treeval(tree, option) is None:
-            continue
-        if found is not None:
-            raise AmqpcltError("options %s and %s are mutually exclusive" %
-                               (found, option))
-        else:
-            found = option
-
-
-def reqall(tree, first, *options):
-    """ If the first option is present require all the others. """
-    if first is not None and _treeval(tree, first) is None:
-        return
-    for option in options:
-        if _treeval(tree, option) is not None:
-            continue
-        if first is None:
-            raise AmqpcltError("options %s is required" % (option,))
-        raise AmqpcltError("option %s requires option %s" % (first, option))
-
-
-def reqany(tree, first, *options):
-    """ If the first option is set, at least one of the others is required. """
-    if first is not None and _treeval(tree, first) is None:
-        return
-    for option in options:
-        if _treeval(tree, option) is not None:
-            return
-    if first is None:
-        raise AmqpcltError("one of this option is required: %s" %
-                           (", ".join(options)))
-    raise AmqpcltError("option %s requires one of: %s" %
-                       (first, ", ".join(options)))
 
 
 def get_parser():
@@ -1064,44 +740,9 @@ def _parse_amqp_uri(uri):
 ##################
 
 
-def get_uuid():
-    """ Return a new uuid. """
-    return str(uuid.uuid1())
-
-
 ### amqpclt error
 class AmqpcltError(Exception):
     """ AMQP client error. """
-
-
-### DEBUG stuff
-def log_debug(message, severity=1):
-    """ Debug helper. """
-    if severity > CONFIG["debug"]:
-        return
-    if TO_SYSLOG:
-        syslog.syslog(message)
-    else:
-        sys.stdout.write("%s\n" % message)
-        sys.stdout.flush()
-
-
-def log_error(message):
-    """ Log an error. """
-    if TO_SYSLOG:
-        syslog.syslog(syslog.LOG_ERR, message)
-    else:
-        sys.stderr.write("%s\n" % message)
-        sys.stderr.flush()
-
-
-def log_warning(message):
-    """ Log a warning. """
-    if TO_SYSLOG:
-        syslog.syslog(syslog.LOG_WARNING, message)
-    else:
-        sys.stdout.write("%s\n" % message)
-        sys.stdout.flush()
 
 
 ### Callback helpers
@@ -1158,8 +799,9 @@ class PikaAdapter(object):
         if (exch_name and
             not exch_name.startswith("amq.") and
                 exch_name not in self._exchange):
-            log_debug("declaring %s exchange: %s" % (self.direction,
-                                                     exch_name), 3)
+            log_debug(
+                "declaring %s exchange: %s" %
+                (self.direction, exch_name))
             self._exchange[exch_name] = 1
             self._channel.exchange_declare(
                 exchange=exch_name,
@@ -1184,7 +826,7 @@ class PikaAdapter(object):
         if not queue_name:
             # amq generated queue
             queue_name = result.method.queue
-        log_debug("incoming queue declared: %s" % queue_name, 3)
+        log_debug("incoming queue declared: %s" % (queue_name, ))
         self._queue[queue_name] = 1
         return queue_name
 
@@ -1193,9 +835,9 @@ class PikaAdapter(object):
         bind_id = md5_hash(queue_name + exchange + routing_key).hexdigest()
         if bind_id in self._bind:
             return
-        log_debug(("binding incoming queue: queue=%s, exchange=%s," +
-                   " routing_key=%s") %
-                  (queue_name, exchange, routing_key), 3)
+        log_debug(
+            "binding incoming queue: queue=%s, exchange=%s, routing_key=%s" %
+            (queue_name, exchange, routing_key))
         self._channel.queue_bind(queue=queue_name,
                                  exchange=exchange,
                                  routing_key=routing_key)
@@ -1239,13 +881,12 @@ class PikaAdapter(object):
             params.get('virtual_host', "rabbitmq").encode(), **extra)
         self._connection = connection = pika.BlockingConnection(parameters)
         self._channel = connection.channel()
-        log_debug("%s broker %s:%s: %s %s" %
-                  (direction, params['host'], params['port'],
-                  self.amqp_type(),
-                  connection.server_properties.get("version", "UNKNOWN"),), 1)
-        if _treeval(CONFIG, "%s-broker-type" % direction) is None:
-            _treeset(CONFIG,
-                     "%s-broker-type" % direction, self.amqp_type())
+        log_debug(
+            "%s broker %s:%s: %s %s" %
+            (direction, params['host'], params['port'], self.amqp_type(),
+             connection.server_properties.get("version", "UNKNOWN"),))
+        if CONFIG.get("%s-broker-type" % direction) is None:
+            CONFIG["%s-broker-type" % direction] = self.amqp_type()
         return True
 
     def amqp_type(self):
@@ -1276,8 +917,8 @@ class KombuAdapter(object):
         if (exch_name and
             not exch_name.startswith("amq.") and
                 exch_name not in self._exchange):
-            log_debug("declaring %s exchange: %s" % (self.direction,
-                                                     exch_name), 3)
+            log_debug(
+                "declaring %s exchange: %s" % (self.direction, exch_name))
             self._exchange[exch_name] = 1
             self._channel.exchange_declare(
                 exchange=exch_name,
@@ -1304,7 +945,7 @@ class KombuAdapter(object):
 #        if not queue_name:
 #            # amq generated queue
 #            queue_name = result.method.queue
-        log_debug("incoming queue declared: %s" % queue_name, 3)
+        log_debug("incoming queue declared: %s" % queue_name)
         self._queue[queue_name] = 1
         return queue_name
 
@@ -1313,9 +954,9 @@ class KombuAdapter(object):
         bind_id = md5_hash(queue_name + exchange + routing_key).hexdigest()
         if bind_id in self._bind:
             return
-        log_debug(("binding incoming queue: queue=%s, exchange=%s," +
-                   " routing_key=%s") %
-                  (queue_name, exchange, routing_key), 3)
+        log_debug(
+            "binding incoming queue: queue=%s, exchange=%s, routing_key=%s" %
+            (queue_name, exchange, routing_key))
         self._channel.queue_bind(queue=queue_name,
                                  exchange=exchange,
                                  routing_key=routing_key)
@@ -1355,18 +996,17 @@ class KombuAdapter(object):
             "transport": "amqplib",
             "virtual_host": params.get("virtual_host", "rabbitmq")
         }
-        timeout_connect = _treeval(CONFIG, "timeout-connect")
+        timeout_connect = CONFIG.get("timeout-connect")
         if timeout_connect is not None:
             parameters["connect_timeout"] = timeout_connect
         parameters.update(extra)
         self._connection = connection = kombu.BrokerConnection(**parameters)
         self._channel = connection.channel()
-        log_debug("%s broker %s:%s: %s" %
-                  (direction, params['host'], params['port'],
-                  self.amqp_type(),), 1)
-        if _treeval(CONFIG, "%s-broker-type" % direction) is None:
-            _treeset(CONFIG,
-                     "%s-broker-type" % direction, self.amqp_type())
+        log_debug(
+            "%s broker %s:%s: %s" %
+            (direction, params['host'], params['port'], self.amqp_type(),))
+        if CONFIG.get("%s-broker-type" % direction) is None:
+            CONFIG["%s-broker-type" % direction] = self.amqp_type()
         return True
 
     def amqp_type(self):
@@ -1374,66 +1014,6 @@ class KombuAdapter(object):
         if self._connection is None:
             return None
         return "RabbitMQ"
-
-
-class StompestAdapter(object):
-    """ Stompest library adapter. """
-    direction = "unknown"
-
-    def __init__(self):
-        """ Initialize Stompest adapter """
-        if "stompest" not in globals():
-            global stompest
-            import stompest.config
-            import stompest.protocol.spec
-            import stompest.sync
-        stompest.protocol.StompSpec.DEFAULT_VERSION = \
-            stompest.protocol.StompSpec.VERSION_1_1
-        self._connection = None
-
-    def connect(self):
-        """ Create a STOMP connection. """
-        direction = self.direction
-        config = CONFIG[direction]["broker"]
-        params = _parse_amqp_uri(config["uri"])
-        cred = config.get("auth")
-        if cred is None:
-            cred = credential.new(scheme="none")
-        if cred.scheme == "x509":
-            raise AmqpcltError(
-                "x509 authentication not supported in stompest")
-        elif cred.scheme == "plain":
-            extra = {
-                "login": cred['name'],
-                "passcode": cred['pass'], }
-        else:
-            # none
-            extra = dict()
-        self._config = stompest.config.StompConfig(
-            "tcp://%s:%s" %
-            (params['host'], params['port']),
-            **extra)
-        self._connection = stompest.sync.Stomp(self._config)
-        timeout_connect = _treeval(CONFIG, "timeout-connect")
-        self._connect_options = {
-            "host": params['host'],
-            "connectTimeout": timeout_connect,
-            "connectedTimeout": timeout_connect,
-        }
-        self._connection.connect(**self._connect_options)
-        log_debug("%s broker %s:%s: %s" %
-                  (direction, params['host'], params['port'],
-                  self.amqp_type(),), 1)
-        if _treeval(CONFIG, "%s-broker-type" % direction) is None:
-            _treeset(CONFIG,
-                     "%s-broker-type" % direction, self.amqp_type())
-        return True
-
-    def amqp_type(self):
-        """ Return the broker type. """
-        if self._connection is None:
-            return None
-        return "Dummy"
 
 
 class PikaIncomingBroker(PikaAdapter):
@@ -1462,7 +1042,7 @@ class PikaIncomingBroker(PikaAdapter):
                              exchange_name,
                              subscription.get("routing_key", ""))
         if queue_name not in self._consume:
-            log_debug("incoming consume from queue: %s" % queue_name, 3)
+            log_debug("incoming consume from queue: %s" % (queue_name, ))
             tag = get_uuid()
             params = {"consumer_callback": self._handle_delivery,
                       "queue": queue_name,
@@ -1511,7 +1091,7 @@ class PikaIncomingBroker(PikaAdapter):
 
     def ack(self, delivery_tag):
         """ Ack a message. """
-        log_debug("acking incoming message: %d" % delivery_tag, 3)
+        log_debug("acking incoming message: %d" % (delivery_tag, ))
         self._channel.basic_ack(delivery_tag=delivery_tag)
         self._pending.remove(delivery_tag)
 
@@ -1552,7 +1132,7 @@ class KombuIncomingBroker(KombuAdapter):
                              exchange_name,
                              subscription.get("routing_key", ""))
         if queue_name not in self._consume:
-            log_debug("incoming consume from queue: %s" % queue_name, 3)
+            log_debug("incoming consume from queue: %s" % (queue_name, ))
             tag = get_uuid()
             params = {"callback": self._handle_message,
                       "no_ack": False,
@@ -1614,7 +1194,7 @@ class KombuIncomingBroker(KombuAdapter):
 
     def ack(self, delivery_tag):
         """ Ack a message. """
-        log_debug("acking incoming message: %d" % delivery_tag, 3)
+        log_debug("acking incoming message: %d" % (delivery_tag, ))
         self._channel.basic_ack(delivery_tag=delivery_tag)
         self._pending.remove(delivery_tag)
 
@@ -1626,88 +1206,6 @@ class KombuIncomingBroker(KombuAdapter):
         """ Stop. """
         self._channel.close()
         self._connection.close()
-        self._connection = None
-
-
-class StompestIncomingBroker(StompestAdapter):
-    """ Stompest incoming broker object. """
-    direction = "incoming"
-
-    def __init__(self):
-        """ Initialize incoming broker module. """
-        super(StompestIncomingBroker, self).__init__()
-        self._msgbuf = list()
-        self._pending = dict()
-        self._consume = dict()
-
-    def _maybe_subscribe(self, subscription):
-        """ May be subscribe to queue. """
-        destination = subscription["original"]
-        if destination not in self._consume:
-            log_debug(
-                "incoming consume from destination: %s" % (destination, ), 3)
-            tag = get_uuid()
-            params = {"id": tag, }
-            if CONFIG["reliable"]:
-                params['ack'] = 'client'
-            else:
-                params['ack'] = 'auto'
-            self._connection.subscribe(destination, params)
-            self._consume[destination] = tag
-
-    def start(self):
-        """ Start the incoming broker module. """
-        self.connect()
-        for sub in CONFIG.get("subscribe", []):
-            self._maybe_subscribe(sub)
-
-    def _read_to_buf(self):
-        """ Read messages into buffer. """
-        while self._connection.canRead(0):
-            frame = self._connection.receiveFrame()
-            self._msgbuf.append(frame)
-
-    def get(self):
-        """ Get a message. """
-        if len(self._msgbuf) == 0:
-            self._read_to_buf()
-        if len(self._msgbuf) == 0:
-            return ("no messages received", None)
-        frame = self._msgbuf.pop(0)
-        header = frame.headers
-        body = frame.body
-        msg_id = header["message-id"]
-        if header.get('content_type', None) is not None and \
-            (header['content_type'].startswith("text/") or
-             "charset=" in header['content_type']):
-            body = body.decode("utf-8")
-        for header_name, header_value in header.items():
-            try:
-                header[header_name] = header_value.encode("utf-8")
-            except UnicodeDecodeError:
-                header[header_name] = header_value.decode("utf-8")
-        msg = Message(header=header, body=body)
-        if CONFIG["reliable"]:
-            self._pending[msg_id] = frame
-            return (msg, msg_id)
-        else:
-            return (msg, None)
-
-    def ack(self, msg_id):
-        """ Ack a message. """
-        log_debug("acking incoming message: %s" % msg_id, 3)
-        self._connection.ack(self._pending[msg_id])
-        del(self._pending[msg_id])
-
-    def idle(self):
-        """ Idle. """
-        self._read_to_buf()
-
-    def stop(self):
-        """ Stop. """
-        for _, token in self._consume.items():
-            self._connection.unsubscribe(('id', token))
-        self._connection.disconnect()
         self._connection = None
 
 
@@ -1727,18 +1225,19 @@ class IncomingQueue(object):
         if self._purge_time is None or time.time() < self._purge_time:
             return
         self._queue.purge()
-        log_debug("incoming queue has been purged", 2)
+        log_debug("incoming queue has been purged")
         self._purge_time = time.time() + 300
 
     def start(self):
         """ Start the incoming queue module. """
-        if _treeval(CONFIG, "incoming-queue-type") is None:
-            _treeset(CONFIG, "incoming-queue-type", "DQS")
-        self._queue = queue.new(_treeval(CONFIG, "incoming-queue").copy())
+        if CONFIG.get("incoming-queue-type") is None:
+            CONFIG["incoming-queue-type"] = "DQS"
+        self._queue = queue.new(CONFIG.get("incoming-queue").copy())
         self._path = getattr(self._queue, "path", "")
         self._eoq = True
-        log_debug("incoming queue %s %s" %
-                  (_treeval(CONFIG, "incoming-queue-type"), self._path), 1)
+        log_debug(
+            "incoming queue %s %s" %
+            (CONFIG.get("incoming-queue-type"), self._path))
 
     def get(self):
         """ Get a message. """
@@ -1747,16 +1246,16 @@ class IncomingQueue(object):
         if self._eoq:
             # (re)start from beginning
             self._purge()
-            log_debug("incoming queue has %d messages" %
-                      (self._queue.count()), 2)
+            log_debug(
+                "incoming queue has %d messages" % (self._queue.count(), ))
             self._eoq = False
             self._lock_failures = 0
             elt = self._queue.first()
-            log_debug("first %s" % elt)
+            log_debug("first %s" % (elt, ))
         else:
             # progress from where we were
             elt = self._queue.next()
-            log_debug("next %s" % elt)
+            log_debug("next %s" % (elt, ))
         if not elt:
             # reached the end
             if not CONFIG["loop"]:
@@ -1769,13 +1268,13 @@ class IncomingQueue(object):
             # cannot lock this one this time...
             self._lock_failures += 1
             return ("failed to lock", None)
-        log_debug("incoming message get %s/%s" % (self._path, elt), 3)
+        log_debug("incoming message get %s/%s" % (self._path, elt))
         msg = self._queue.get_message(elt)
         if CONFIG["reliable"]:
             return (msg, elt)
         # otherwise not reliable
         if CONFIG["remove"]:
-            log_debug("removing message %s/%s" % (self._path, elt), 5)
+            log_debug("removing message %s/%s" % (self._path, elt))
             self._queue.remove(elt)
         else:
             self._queue.unlock(elt)
@@ -1785,11 +1284,11 @@ class IncomingQueue(object):
         """ Ack a message. """
         if CONFIG["remove"]:
             log_debug("incoming message remove %s/%s" %
-                      (self._path, msg_id), 3)
+                      (self._path, msg_id))
             self._queue.remove(msg_id)
         else:
             log_debug("incoming message unlock %s/%s" %
-                      (self._path, msg_id), 3)
+                      (self._path, msg_id))
             self._queue.unlock(msg_id)
 
     def idle(self):
@@ -1951,69 +1450,6 @@ class KombuOutgoingBroker(KombuAdapter):
         self._connection = None
 
 
-class StompestOutgoingBroker(StompestAdapter):
-    """ Stompest outgoing broker object. """
-    direction = "outgoing"
-
-    def __init__(self):
-        """ Initialize the outgoing broker module. """
-        super(StompestOutgoingBroker, self).__init__()
-
-    def start(self):
-        """ Start the outgoing broker module. """
-        self.connect()
-
-    def put(self, msg, msg_id=None):
-        """ Put a message. """
-        # Send the message
-        if "destination" not in msg.header:
-            raise AmqpcltError("message doesn't have a destination: %s" % msg)
-        if "content-type" in msg.header:
-            content_type = msg.header["content-type"]
-            if content_type.startswith("text/") or \
-                    "charset=" in content_type:
-                if not msg.is_text():
-                    raise AmqpcltError("unexpected text content-type "
-                                       "for binary message: %s" % content_type)
-            else:
-                if msg.is_text():
-                    raise AmqpcltError("unexpected binary content-type for "
-                                       "text message: %s" % content_type)
-        extra = dict()
-        if CONFIG['reliable']:
-            extra['receipt'] = get_uuid()
-        self._connection.send(
-            destination=msg.header['destination'],
-            body=msg.body,
-            headers=msg.header,
-            **extra)
-        if CONFIG['reliable']:
-            log_debug("waiting for receipt: %s" % (extra['receipt'], ), 5)
-            received = self._connection.canRead(5)
-            if received:
-                frame = self._connection.receiveFrame()
-                if (frame.command != "RECEIPT" or
-                        frame.headers.get("receipt-id", None) !=
-                        extra['receipt']):
-                    raise AmqpcltError("wrong receipt received for: %s" % msg)
-                log_debug("receipt received: %s" % (extra['receipt'], ), 5)
-            else:
-                raise AmqpcltError("receipt not received for %s" % msg)
-        if msg_id is None:
-            return list()
-        else:
-            return [msg_id, ]
-
-    def idle(self):
-        """ Idle. """
-        return list()
-
-    def stop(self):
-        """ Stop. """
-        self._connection.disconnect()
-        self._connection = None
-
-
 class OutgoingQueue(object):
     """ Outgoing queue object. """
 
@@ -2024,17 +1460,17 @@ class OutgoingQueue(object):
 
     def start(self):
         """ Start the outgoing queue module. """
-        if _treeval(CONFIG, "outgoing-queue-type") is None:
-            _treeset(CONFIG, "outgoing-queue-type", "DQS")
-        self._queue = queue.new(_treeval(CONFIG, "outgoing-queue").copy())
+        if CONFIG.get("outgoing-queue-type") is None:
+            CONFIG["outgoing-queue-type"] = "DQS"
+        self._queue = queue.new(CONFIG.get("outgoing-queue").copy())
         self._path = getattr(self._queue, "path", "")
         log_debug("outgoing queue %s %s" %
-                  (_treeval(CONFIG, "outgoing-queue-type"), self._path), 1)
+                  (CONFIG.get("outgoing-queue-type"), self._path))
 
     def put(self, msg, element_id=None):
         """ Put a message. """
         elt = self._queue.add_message(msg)
-        log_debug("outgoing message added %s/%s" % (self._path, elt), 3)
+        log_debug("outgoing message added %s/%s" % (self._path, elt))
         if element_id is None:
             return list()
         else:
@@ -2068,23 +1504,23 @@ def _get_kv_from_string(given):
 def _clean_configuration():
     """ Clean configuration. """
     for arg, arg_props in ARGUMENTS.items():
-        val = _treeval(CONFIG, arg)
+        val = CONFIG.get(arg)
         if val is not None and arg_props.get("type", str) in [int, float]:
             try:
                 val = arg_props.get("type", str)(val)
             except ValueError:
                 raise AmqpcltError("%s must be of %s type" %
                                    arg_props.get("type", str))
-            _treeset(CONFIG, arg, val)
+            CONFIG[arg] = val
 
     for arg in ["incoming-queue", "outgoing-queue", "subscribe"]:
-        val = _treeval(CONFIG, arg)
+        val = CONFIG.get(arg)
         if val is None:
             continue
         if type(val) in [str, unicode]:
             # explode it
             newval = _get_kv_from_string(val)
-            _treeset(CONFIG, arg, newval)
+            CONFIG[arg] = newval
         elif type(val) == list:
             newval = list()
             for value in val:
@@ -2094,10 +1530,10 @@ def _clean_configuration():
                 else:
                     new_value = value
                 newval.append(new_value)
-            _treeset(CONFIG, arg, newval)
+            CONFIG[arg] = newval
 
     for auth in ["incoming-broker-auth", "outgoing-broker-auth"]:
-        val = _treeval(CONFIG, auth)
+        val = CONFIG.get(auth)
         if val is None:
             continue
         elif type(val) == str:
@@ -2109,7 +1545,7 @@ def _clean_configuration():
                 val[key] = value.encode()
             cred = credential.new(**val)
         cred.check()
-        _treeset(CONFIG, auth, cred)
+        CONFIG[auth] = cred
 
 
 def option_parse():
@@ -2121,8 +1557,7 @@ def option_parse():
     if conf_path is not None:
         merged = read_apache_config(os.path.abspath(conf_path))
     merged = _merge(merged, args)
-    _explode_dict(merged)
-    CONFIG = merged
+    CONFIG = TreeDict(merged)
     _clean_configuration()
 
     mutex(CONFIG, "quit", "status")
@@ -2131,7 +1566,7 @@ def option_parse():
 
     if "quit" in CONFIG:
         pid = pid_read(CONFIG["pidfile"])
-        timeout_linger = _treeval(CONFIG, "timeout-linger")
+        timeout_linger = CONFIG.get("timeout-linger")
         if pid and timeout_linger is not None:
             print("%s (pid %d) is being told to quit..." % (PROG, pid))
             pid_write(CONFIG["pidfile"], pid, "quit")
@@ -2189,26 +1624,37 @@ def option_parse():
     if "prefetch" not in CONFIG and CONFIG["reliable"] and CONFIG.get("count"):
         CONFIG["prefetch"] = min(CONFIG.get("count", 100), 100)
 
-    if CONFIG["debug"] > 3:
+    if CONFIG["loglevel"] == "debug":
         pp.pprint(CONFIG)
 
 
-def init_debug():
-    """ Initialize debug. """
-    global TO_SYSLOG
-    TO_SYSLOG = CONFIG.get("daemon") is True
-    if TO_SYSLOG:
-        syslog.openlog(PROG, syslog.LOG_PID, syslog.LOG_USER)
+def initialize_log(stdout=False):
+    """
+    Initialize the log system.
+
+    If stdout is set to True then the log is initialized to print
+    to stdout independently from the configuration.
+    """
+    options = {
+        "loglevel": CONFIG.get('loglevel', 'warning'),
+    }
+    if "logfile" in CONFIG:
+        options["logfile"] = CONFIG.get('logfile')
+    if stdout:
+        logsystem = "stdout"
+    else:
+        logsystem = CONFIG.get('log', DEFAULT_OPTIONS['log'])
+    log.LOG = log.get_log(logsystem)('amqpclt', **options)
 
 
-def init_callback():
+def initialize_callback():
     """ Initialize callback. """
     if CONFIG.get("callback", None) is None:
         return
-    callback_code = _treeval(CONFIG, "callback-code")
-    callback_path = _treeval(CONFIG, "callback-path")
+    callback_code = CONFIG.get("callback-code")
+    callback_path = CONFIG.get("callback-path")
     if callback_code is not None:
-        log_debug("callback inline", 1)
+        log_debug("callback inline")
         if re.search("^\s*def ", callback_code, re.MULTILINE):
             code = callback_code
         else:
@@ -2220,7 +1666,7 @@ def check(self, msg):
 """ + code + """
     return msg""")
     elif callback_path is not None:
-        log_debug("callback file %s" % (callback_path,))
+        log_debug("callback file %s" % (callback_path, ))
         try:
             call_file = open(callback_path, "r")
             code = call_file.read()
@@ -2239,28 +1685,28 @@ def check(self, msg):
         raise AmqpcltError("syntax error in the callback: %s" % error)
     if not hasattr(CALLBACK, "check"):
         raise AmqpcltError("check(message) missing in callback: %s")
-    callback_data = _treeval(CONFIG, "callback-data")
+    callback_data = CONFIG.get("callback-data")
     if callback_data is None:
-        _treeset(CONFIG, "callback-data", list())
+        CONFIG["callback-data"] = list()
     else:
         callback_data = callback_data.split(",")
-        _treeset(CONFIG, "callback-data", callback_data)
+        CONFIG["callback-data"] = callback_data
 
 
-def init_daemon():
+def initialize_daemon():
     """ Initialize daemon. """
     if not CONFIG.get("daemon"):
         return
     daemonize()
-    log_debug("daemonized", 1)
+    log_debug("daemonized")
 
 
 def initialize():
     """ Initialize. """
     option_parse()
-    init_debug()
-    init_callback()
-    init_daemon()
+    initialize_log()
+    initialize_callback()
+    initialize_daemon()
     if CONFIG.get("pidfile"):
         pid_write(CONFIG["pidfile"], os.getpid(), excl=True)
 
@@ -2269,16 +1715,16 @@ def handle_sig(signum, _):
     """ Handle signals. """
     global running
     if signum == signal.SIGINT:
-        log_debug("caught SIGINT", 1)
+        log_debug("caught SIGINT")
         running = False
     elif signum == signal.SIGTERM:
-        log_debug("caught SIGTERM", 1)
+        log_debug("caught SIGTERM")
         running = False
     elif signum == signal.SIGHUP:
-        log_debug("caught SIGHUP, ignoring it", 1)
+        log_debug("caught SIGHUP, ignoring it")
 
 
-@log_exceptions(re_raise=False)
+@log.log_exceptions(re_raise=False)
 def work():
     """ Do it! """
     global running
@@ -2286,30 +1732,26 @@ def work():
     put_list = list()
     timek = dict()
     timek["start"] = time.time()
-    log_debug("starting", 1)
+    log_debug("starting")
     signal.signal(signal.SIGINT, handle_sig)
     signal.signal(signal.SIGTERM, handle_sig)
     signal.signal(signal.SIGHUP, handle_sig)
-    if _treeval(CONFIG, "incoming-broker") is not None:
-        mtype = _treeval(CONFIG, "incoming-broker-module") or "pika"
+    if CONFIG.get("incoming-broker") is not None:
+        mtype = CONFIG.get("incoming-broker-module") or "pika"
         if mtype == "kombu":
             incoming = KombuIncomingBroker()
         elif mtype == "pika":
             incoming = PikaIncomingBroker()
-        elif mtype == "stompest":
-            incoming = StompestIncomingBroker()
         else:
             raise AmqpcltError("invalid incoming broker module: %s" % (mtype))
     else:
         incoming = IncomingQueue()
-    if _treeval(CONFIG, "outgoing-broker") is not None:
-        mtype = _treeval(CONFIG, "outgoing-broker-module") or "pika"
+    if CONFIG.get("outgoing-broker") is not None:
+        mtype = CONFIG.get("outgoing-broker-module") or "pika"
         if mtype == "kombu":
             outgoing = KombuOutgoingBroker()
         elif mtype == "pika":
             outgoing = PikaOutgoingBroker()
-        elif mtype == "stompest":
-            outgoing = StompestOutgoingBroker()
         else:
             raise AmqpcltError("invalid outgoing broker module: %s" % (mtype))
     else:
@@ -2319,13 +1761,13 @@ def work():
         outgoing.start()
     if CONFIG.get("callback", None) is not None:
         CALLBACK.start(*CONFIG["callback"]["data"])
-    log_debug("running", 1)
+    log_debug("running")
     count = size = 0
     if CONFIG.get("duration") is not None:
         timek["max"] = time.time() + CONFIG["duration"]
     else:
         timek["max"] = 0
-    tina = _treeval(CONFIG, "timeout-inactivity")
+    tina = CONFIG.get("timeout-inactivity")
     if tina is not None:
         timek["ina"] = time.time() + tina
     else:
@@ -2346,7 +1788,7 @@ def work():
                 (msg, msg_id) = incoming.get()
                 if type(msg) != str:
                     if msg_id in pending:
-                        log_debug("duplicate ack id: %s" % msg_id)
+                        log_debug("duplicate ack id: %s" % (msg_id, ))
                         sys.exit(1)
                     else:
                         pending[msg_id] = True
@@ -2370,7 +1812,7 @@ def work():
             if type(msg) != str:
                 msg = CALLBACK.check(msg)
                 if not isinstance(msg, Message):
-                    log_debug("message discarded by callback: %s" % msg)
+                    log_debug("message discarded by callback: %s" % (msg, ))
                     # message discarded by callback
                     if CONFIG["reliable"]:
                         if msg_id not in pending:
@@ -2384,7 +1826,7 @@ def work():
                 CALLBACK.idle()
         # put | idle
         if isinstance(msg, Message):
-            log_debug("loop got new message", 3)
+            log_debug("loop got new message")
             if CONFIG["lazy"]:
                 outgoing.start()
                 CONFIG["lazy"] = False
@@ -2393,9 +1835,9 @@ def work():
                 timek["last"] = time.time()
         else:
             if msg:
-                log_debug("loop %s" % (msg,), 3)
+                log_debug("loop %s" % (msg, ))
             else:
-                log_debug("loop end", 1)
+                log_debug("loop end")
                 running = False
             if CONFIG["lazy"]:
                 put_list = list()
@@ -2411,12 +1853,12 @@ def work():
         if CONFIG.get("pidfile"):
             action = pid_check(CONFIG["pidfile"])
             if action == "quit":
-                log_debug("asked to quit", 1)
+                log_debug("asked to quit")
                 break
             pid_touch(CONFIG["pidfile"])
     # linger
-    log_debug("linger", 1)
-    timeout_linger = _treeval(CONFIG, "timeout-linger")
+    log_debug("linger")
+    timeout_linger = CONFIG.get("timeout-linger")
     if timeout_linger:
         timek["max"] = time.time() + timeout_linger
     else:
@@ -2454,20 +1896,20 @@ def work():
             print("average message size is around %d bytes" %
                   (int(size / count + 0.5)))
     # stop
-    log_debug("stopping", 1)
+    log_debug("stopping")
     if CONFIG.get("callback", None) is not None:
-        log_debug("stopping callback", 1)
+        log_debug("stopping callback")
         CALLBACK.stop()
     if not CONFIG.get("lazy"):
-        log_debug("stopping outgoing", 1)
+        log_debug("stopping outgoing")
         outgoing.stop()
-    log_debug("stopping incoming", 1)
+    log_debug("stopping incoming")
     incoming.stop()
-    log_debug("incoming stopped", 1)
+    log_debug("incoming stopped")
     timek["stop"] = time.time()
     timek["elapsed"] = timek["stop"] - timek["start"]
     log_debug("work processed %d messages in %.3f seconds" %
-              (count, timek["elapsed"]), 1)
+              (count, timek["elapsed"]))
 
 
 def clean():

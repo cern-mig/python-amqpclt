@@ -55,14 +55,15 @@ class PikaTest(unittest.TestCase):
         cmd1 = "python bin/amqpclt --incoming-queue path=%s" \
                " --outgoing-broker-uri %s " \
                " --outgoing-broker-auth plain,name=guest,pass=guest" \
-               " --remove --debug 7" \
+               " --remove --loglevel debug" \
                % (mq1_path, self.broker)
         (ret, out, err) = tu.timed_process(cmd1.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
         cmd2 = "python bin/amqpclt --incoming-broker-uri %s" \
                " --incoming-broker-auth plain,name=guest,pass=guest" \
                " --subscribe destination=%s" \
-               " --outgoing-queue path=%s --count %d --reliable --debug 7" \
+               " --outgoing-queue path=%s --count %d --reliable " \
+               "--loglevel debug" \
                % (self.broker, dest, mq2_path, count)
         (ret, out, err) = tu.timed_process(cmd2.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))

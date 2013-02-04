@@ -61,7 +61,7 @@ class PikaTest(unittest.TestCase):
                " --outgoing-broker-uri %s " \
                " --outgoing-broker-module kombu " \
                " --outgoing-broker-auth plain,name=guest,pass=guest" \
-               " --remove --debug 7" \
+               " --remove --loglevel debug" \
                % (mq1_path, self.broker)
         (ret, out, err) = tu.timed_process(cmd1.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
@@ -69,7 +69,8 @@ class PikaTest(unittest.TestCase):
                " --incoming-broker-module kombu" \
                " --incoming-broker-auth plain,name=guest,pass=guest" \
                " --subscribe destination=%s" \
-               " --outgoing-queue path=%s --count %d --reliable --debug 7" \
+               " --outgoing-queue path=%s --count %d --reliable " \
+               "--loglevel debug" \
                % (self.broker, dest, mq2_path, count)
         (ret, out, err) = tu.timed_process(cmd2.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))

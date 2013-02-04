@@ -48,7 +48,7 @@ class LocalTest(unittest.TestCase):
             mq1.add_message(Message(body=body))
         self.assertEqual(count, mq1.count())
         cmd = "python bin/amqpclt --incoming-queue path=%s" \
-              " --outgoing-queue path=%s --remove --debug 7" \
+              " --outgoing-queue path=%s --remove --loglevel debug" \
               % (mq1_path, mq2_path)
         (ret, out, err) = tu.timed_process(cmd.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
