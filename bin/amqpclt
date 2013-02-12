@@ -1553,7 +1553,9 @@ def option_parse():
     conf_path = args.get("conf", None)
     merged = dict()
     if conf_path is not None:
-        merged = read_apache_config(os.path.abspath(conf_path))
+        merged = read_apache_config(
+            os.path.abspath(conf_path),
+            {"InterPolateVars": True, })
     merged = _merge(merged, args)
     CONFIG = TreeDict(merged)
     _clean_configuration()
