@@ -63,7 +63,7 @@ OPTIONS
 	execute the Python code in the given file on each message, see the "CALLBACK" section for more information
 
 **--conf** *PATH*
-	use the given configuration file, see theCONFIGURATION FILE section for more information
+	use the given configuration file, see theconfigURATION FILE section for more information
 
 **-c, --count** *INTEGER*
 	process at most the given number of messages; note: when using an incoming broker, to avoid consuming more messages, it is recommended to enable the --reliable option

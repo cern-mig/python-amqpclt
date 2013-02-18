@@ -6,26 +6,19 @@ import argparse
 import os
 import pprint
 import re
-import signal
-import socket
-import ssl
 import sys
-import syslog
 import time
-import urllib
 
 import amqpclt
+import amqpclt.client
+import amqpclt.common
 
 from mtb.conf import read_apache_config, TreeDict
-from mtb.log import log_warning, log_error, log_debug
-import mtb.log as log
-from mtb.modules import md5_hash
 from mtb.pid import \
-    pid_read, pid_touch, pid_write, pid_check, pid_quit, \
-    pid_status, pid_remove
-from mtb.proc import daemonize
-from mtb.string import get_uuid
+    pid_read, pid_write, pid_quit, pid_status
 from mtb.validation import mutex, reqall, reqany
+
+import auth.credential as credential
 
 import logging
 logging.basicConfig()
@@ -33,16 +26,7 @@ logging.basicConfig()
 from warnings import simplefilter
 simplefilter("ignore")
 
-import auth.credential as credential
-import messaging.queue as queue
-from messaging.message import Message
-
-#pika.log.setup(pika.log.INFO, color=True)
-pp = pprint.PrettyPrinter(indent=2)
-running = False
-CALLBACK = None
-CONFIG = dict()
-TO_SYSLOG = False
+PP = pprint.PrettyPrinter(indent=2)
 
 PROG = "amqpclt"
 SHORT_DESCRIPTION = "versatile AMQP client"
@@ -317,7 +301,7 @@ ARGUMENTS = {
     "conf": {
         "long": "--conf",
         "help": "use the given configuration file, see the"
-                "CONFIGURATION FILE section for more information",
+                "configURATION FILE section for more information",
         "metavar": "PATH", },
     "count": {
         "long": "--count",
@@ -606,14 +590,7 @@ def print_pod():
     print(out)
 
 
-def _merge(first, second):
-    """ Merge two dictionaries. """
-    merge = first.copy()
-    merge.update(second)
-    return merge
-
-
-def get_parser():
+def _get_parser():
     """ Create the parser. """
     parser = argparse.ArgumentParser(
         prog=PROG,
@@ -635,9 +612,9 @@ def get_parser():
     return parser
 
 
-def read_args():
+def _read_args():
     """ Read the arguments. """
-    parsed = get_parser().parse_args()
+    parsed = _get_parser().parse_args()
     if getattr(parsed, "pod", False):
         print_pod()
         sys.exit(0)
@@ -646,841 +623,7 @@ def read_args():
         sys.exit(0)
     return vars(parsed)
 
-
-######### Parse helpers
-_SEP_CHARS = re.compile("[, ]")
-_SENDER_DEST_RECURSIVE = re.compile("^(exchange|arguments)$")
-_STOMP_DEST = re.compile("(/queue/|/topic/)(.*)")
-
-
-def _parse_sender_destination(entity):
-    """ Parse sender destination. """
-    entity = entity.encode()
-    destination = dict()
-    if entity.startswith("/queue/"):
-        destination["routing_key"] = entity[7:]
-        destination["exchange"] = {"name": ""}
-        destination["queue"] = {"name": entity[7:],
-                                "durable": True,
-                                "exclusive": False,
-                                "auto_delete": False}
-    elif entity.startswith("/topic/"):
-        destination["routing_key"] = entity[7:]
-        destination["exchange"] = {"name": "amq.topic"}
-        destination["queue"] = {"durable": False,
-                                "auto_delete": True,
-                                "exclusive": True}
-    else:
-        for element in _SEP_CHARS.split(entity):
-            if not element:
-                continue
-            (key, val) = element.split("=")
-            if _SENDER_DEST_RECURSIVE.match(key):
-                val = _parse_sender_destination(urllib.unquote(val))
-            elif val == "false":
-                val = False
-            elif val == "true":
-                val = True
-            destination[key] = val
-    return destination
-
-
-_SUBSCRIBE_DEST_RECURSIVE = re.compile("^(exchange|queue|arguments)$")
-
-
-def _parse_subscribe_destination(entity):
-    """ Parse subscribe destination. """
-    entity = entity.encode()
-    destination = dict()
-    destination["original"] = entity
-    if entity.startswith("/queue/"):
-        destination["exchange"] = {"name": ""}
-        destination["queue"] = {"name": entity[7:],
-                                "durable": True,
-                                "exclusive": False,
-                                "auto_delete": False}
-    elif entity.startswith("/topic/"):
-        destination["routing_key"] = entity[7:]
-        destination["exchange"] = {"name": "amq.topic"}
-        destination["queue"] = {"durable": False,
-                                "auto_delete": True,
-                                "exclusive": True}
-    else:
-        for element in _SEP_CHARS.split(entity):
-            if not element:
-                continue
-            (key, val) = element.split("=")
-            if _SUBSCRIBE_DEST_RECURSIVE.match(key):
-                val = _parse_sender_destination(urllib.unquote(val))
-            elif val == "false":
-                val = False
-            elif val == "true":
-                val = True
-            destination[key] = val
-    return destination
-
-
-_AMQP_RE = re.compile(
-    r'^(amqp|tcp)://'
-    '((?P<host>[^/:]*)([:](?P<port>[^/]*))?)'
-    '/(?P<virtual_host>.*)/?')
-
-
-def _parse_amqp_uri(uri):
-    """ Parse an AMQP uri and return a dict with its key value pairs. """
-    uri_match = _AMQP_RE.match(uri)
-    if uri_match:
-        return uri_match.groupdict()
-    else:
-        raise ValueError("invalid uri, required format is: "
-                         "amqp://host:port/virtual_host, given uri: %s" %
-                         (uri, ))
 ##################
-
-
-### amqpclt error
-class AmqpcltError(Exception):
-    """ AMQP client error. """
-
-
-### Callback helpers
-def _callback_module(code):
-    """ Build the callback. """
-    class Callback(object):
-        """ Callback class. """
-        def start(self, *args):
-            """ Called when callback start. """
-        #def check(self, message):
-        #    """ Called when one message is received from incoming module. """
-        def idle(self):
-            """ Called when in idle and nothing to do. """
-        def stop(self):
-            """ Called when callback is stopped. """
-        exec code
-        #start = classmethod(start)
-        #check = classmethod(check)
-        #idle = classmethod(idle)
-        #stop = classmethod(stop)
-    return Callback
-##################
-
-
-class PikaAdapter(object):
-    """ Pika library adapter. """
-    direction = "unknown"
-
-    def __init__(self):
-        """ Initialize Pika adapter """
-        if "pika" not in globals():
-            global pika
-            import pika
-            if re.match("^0.9.6.*", pika.__version__):
-                def sanitize(self, key):
-                    """ sanitize """
-                    if hasattr(key, 'method') and hasattr(key.method, 'NAME'):
-                        return key.method.NAME
-                    if hasattr(key, 'NAME'):
-                        return key.NAME
-                    if hasattr(key, '__dict__') and 'NAME' in key.__dict__:
-                        return key.__dict__['NAME']
-                    return str(key)
-                pika.callback.CallbackManager.sanitize = sanitize
-        self._connection = None
-        self._channel = None
-        self._exchange = dict()
-        self._queue = dict()
-        self._bind = dict()
-
-    def _maybe_declare_exchange(self, exch_props):
-        """ May be declare an exchange. """
-        exch_name = exch_props.get("name", "")
-        if (exch_name and
-            not exch_name.startswith("amq.") and
-                exch_name not in self._exchange):
-            log_debug(
-                "declaring %s exchange: %s" %
-                (self.direction, exch_name))
-            self._exchange[exch_name] = 1
-            self._channel.exchange_declare(
-                exchange=exch_name,
-                durable=exch_props.get("durable", False),
-                type=exch_props.get("type", "direct"),
-                auto_delete=exch_props.get("auto_delete", False),
-                arguments=exch_props.get("arguments", dict())
-            )
-        return exch_name
-
-    def _maybe_declare_queue(self, queue_props):
-        """ May be declare a queue. """
-        queue_name = queue_props.get("name", "")
-        if queue_name and queue_name in self._queue:
-            return queue_name
-        result = self._channel.queue_declare(
-            queue=queue_name,
-            durable=queue_props.get("durable", False),
-            exclusive=queue_props.get("exclusive", False),
-            auto_delete=queue_props.get("auto_delete", False),
-            arguments=queue_props.get("arguments", dict()))
-        if not queue_name:
-            # amq generated queue
-            queue_name = result.method.queue
-        log_debug("incoming queue declared: %s" % (queue_name, ))
-        self._queue[queue_name] = 1
-        return queue_name
-
-    def _maybe_bind(self, queue_name, exchange, routing_key=""):
-        """ May be bind a queue to an exchange. """
-        bind_id = md5_hash(queue_name + exchange + routing_key).hexdigest()
-        if bind_id in self._bind:
-            return
-        log_debug(
-            "binding incoming queue: queue=%s, exchange=%s, routing_key=%s" %
-            (queue_name, exchange, routing_key))
-        self._channel.queue_bind(queue=queue_name,
-                                 exchange=exchange,
-                                 routing_key=routing_key)
-        self._bind[bind_id] = 1
-
-    def connect(self):
-        """ Create a pika AMQP connection and channel. """
-        direction = self.direction
-        config = CONFIG[direction]["broker"]
-        params = _parse_amqp_uri(config["uri"])
-        cred = config.get("auth")
-        if cred is None:
-            cred = credential.new(scheme="none")
-        if cred.scheme == "x509":
-            if pika.__version__ < "0.9.6":
-                raise AmqpcltError(
-                    "x509 authentication not supported in pika %s" %
-                    pika.__version__)
-            ssl_options = dict()
-            for key, keyval in {"cert": "certfile",
-                                "key": "keyfile", "ca": "ca_certs"}.items():
-                if key in cred:
-                    ssl_options[keyval] = cred[key]
-            ssl_options["cert_reqs"] = ssl.CERT_REQUIRED
-            ssl_options["ssl_version"] = ssl.PROTOCOL_SSLv3
-            extra = {"ssl": True,
-                     "ssl_options": ssl_options,
-                     "credentials": pika.credentials.ExternalCredentials()}
-        elif cred.scheme == "plain":
-            extra = {
-                "credentials": pika.credentials.PlainCredentials(
-                    cred['name'], cred['pass']), }
-        else:
-            # none
-            extra = dict()
-        #if CONFIG.get("heartbeat") is not None:
-        #    extra["heartbeat"] = CONFIG["heartbeat"]
-        parameters = pika.connection.ConnectionParameters(
-            params['host'].encode(),
-            int(params['port']),
-            params.get('virtual_host', "rabbitmq").encode(), **extra)
-        self._connection = connection = pika.BlockingConnection(parameters)
-        self._channel = connection.channel()
-        log_debug(
-            "%s broker %s:%s: %s %s" %
-            (direction, params['host'], params['port'], self.amqp_type(),
-             connection.server_properties.get("version", "UNKNOWN"),))
-        if CONFIG.get("%s-broker-type" % direction) is None:
-            CONFIG["%s-broker-type" % direction] = self.amqp_type()
-        return True
-
-    def amqp_type(self):
-        """ Return the broker type. """
-        if self._connection is None:
-            return None
-        return self._connection.server_properties.get("product", "UNKNOWN")
-
-
-class KombuAdapter(object):
-    """ Kombu library adapter. """
-    direction = "unknown"
-
-    def __init__(self):
-        """ Initialize Kombu adapter """
-        if "kombu" not in globals():
-            global kombu
-            import kombu
-        self._connection = None
-        self._channel = None
-        self._exchange = dict()
-        self._queue = dict()
-        self._bind = dict()
-
-    def _maybe_declare_exchange(self, exch_props):
-        """ May be declare an exchange. """
-        exch_name = exch_props.get("name", "")
-        if (exch_name and
-            not exch_name.startswith("amq.") and
-                exch_name not in self._exchange):
-            log_debug(
-                "declaring %s exchange: %s" % (self.direction, exch_name))
-            self._exchange[exch_name] = 1
-            self._channel.exchange_declare(
-                exchange=exch_name,
-                durable=exch_props.get("durable", False),
-                type=exch_props.get("type", "direct"),
-                auto_delete=exch_props.get("auto_delete", False),
-                arguments=exch_props.get("arguments", dict())
-            )
-        return exch_name
-
-    def _maybe_declare_queue(self, queue_props):
-        """ May be declare a queue. """
-        queue_name = queue_props.get("name", "")
-        if queue_name and queue_name in self._queue:
-            return queue_name
-        if not queue_name:
-            queue_name = get_uuid()
-        result = self._channel.queue_declare(
-            queue=queue_name,
-            durable=queue_props.get("durable", False),
-            exclusive=queue_props.get("exclusive", False),
-            auto_delete=queue_props.get("auto_delete", False),
-            arguments=queue_props.get("arguments", dict()))
-#        if not queue_name:
-#            # amq generated queue
-#            queue_name = result.method.queue
-        log_debug("incoming queue declared: %s" % queue_name)
-        self._queue[queue_name] = 1
-        return queue_name
-
-    def _maybe_bind(self, queue_name, exchange, routing_key=""):
-        """ May be bind a queue to an exchange. """
-        bind_id = md5_hash(queue_name + exchange + routing_key).hexdigest()
-        if bind_id in self._bind:
-            return
-        log_debug(
-            "binding incoming queue: queue=%s, exchange=%s, routing_key=%s" %
-            (queue_name, exchange, routing_key))
-        self._channel.queue_bind(queue=queue_name,
-                                 exchange=exchange,
-                                 routing_key=routing_key)
-        self._bind[bind_id] = 1
-
-    def connect(self):
-        """ Create a kombu AMQP connection and channel. """
-        direction = self.direction
-        config = CONFIG[direction]["broker"]
-        params = _parse_amqp_uri(config["uri"])
-        cred = config.get("auth")
-        if cred is None:
-            cred = credential.new(scheme="none")
-        if cred.scheme == "x509":
-            ssl_options = dict()
-            cred_dict = cred.dict()
-            for key, keyval in {"cert": "certfile",
-                                "key": "keyfile", "ca": "ca_certs"}.items():
-                if key in cred_dict:
-                    ssl_options[keyval] = cred_dict[key]
-            ssl_options["cert_reqs"] = ssl.CERT_REQUIRED
-            ssl_options["ssl_version"] = ssl.PROTOCOL_SSLv3
-            extra = {"ssl": ssl_options,
-                     "transport_options": {"login_method": "EXTERNAL"}}
-        elif cred.scheme == "plain":
-            extra = {
-                "userid": cred['name'],
-                "password": cred['pass'], }
-        else:
-            # none
-            extra = dict()
-        #if CONFIG.get("heartbeat") is not None:
-        #    extra["heartbeat"] = CONFIG["heartbeat"]
-        parameters = {
-            "hostname": params["host"],
-            "port": int(params["port"]),
-            "transport": "amqplib",
-            "virtual_host": params.get("virtual_host", "rabbitmq")
-        }
-        timeout_connect = CONFIG.get("timeout-connect")
-        if timeout_connect is not None:
-            parameters["connect_timeout"] = timeout_connect
-        parameters.update(extra)
-        self._connection = connection = kombu.BrokerConnection(**parameters)
-        self._channel = connection.channel()
-        log_debug(
-            "%s broker %s:%s: %s" %
-            (direction, params['host'], params['port'], self.amqp_type(),))
-        if CONFIG.get("%s-broker-type" % direction) is None:
-            CONFIG["%s-broker-type" % direction] = self.amqp_type()
-        return True
-
-    def amqp_type(self):
-        """ Return the broker type. """
-        if self._connection is None:
-            return None
-        return "RabbitMQ"
-
-
-class PikaIncomingBroker(PikaAdapter):
-    """ Pika incoming broker object. """
-    direction = "incoming"
-
-    def __init__(self):
-        """ Initialize incoming broker module. """
-        super(PikaIncomingBroker, self).__init__()
-        self._msgbuf = list()
-        self._pending = list()
-        self._consume = dict()
-
-    def _maybe_subscribe(self, subscription):
-        """ May be subscribe to queue. """
-        if "queue" in subscription:
-            queue_name = self._maybe_declare_queue(subscription["queue"])
-        else:
-            raise AmqpcltError("subscription must contain a queue")
-        exchange_name = None
-        if "exchange" in subscription:
-            exchange_name = self._maybe_declare_exchange(
-                subscription["exchange"])
-        if exchange_name:
-            self._maybe_bind(queue_name,
-                             exchange_name,
-                             subscription.get("routing_key", ""))
-        if queue_name not in self._consume:
-            log_debug("incoming consume from queue: %s" % (queue_name, ))
-            tag = get_uuid()
-            params = {"consumer_callback": self._handle_delivery,
-                      "queue": queue_name,
-                      "consumer_tag": tag}
-            if not CONFIG["reliable"]:
-                params["no_ack"] = True
-            self._channel.basic_consume(**params)
-            self._consume[queue_name] = tag
-
-    def _handle_delivery(self, channel, method, header, body):
-        """ Handle delivery. """
-        self._msgbuf.append((method, header, body))
-
-    def start(self):
-        """ Start the incoming broker module. """
-        self.connect()
-        if CONFIG.get("prefetch") >= 0:
-            self._channel.basic_qos(prefetch_count=int(CONFIG["prefetch"]))
-        subscribe = CONFIG.get("subscribe", [])
-        for sub in subscribe:
-            self._maybe_subscribe(sub)
-
-    def get(self):
-        """ Get a message. """
-        if len(self._msgbuf) == 0:
-            self._channel.transport.connection.process_data_events()
-        if len(self._msgbuf) == 0:
-            return ("no messages received", None)
-        (method, header, body) = self._msgbuf.pop(0)
-        if header.content_type is not None and \
-            (header.content_type.startswith("text/") or
-             "charset=" in header.content_type):
-            body = body.decode("utf-8")
-        headers = header.headers
-        for header_name, header_value in headers.items():
-            try:
-                headers[header_name] = header_value.encode("utf-8")
-            except UnicodeDecodeError:
-                headers[header_name] = header_value.decode("utf-8")
-        msg = Message(header=header.headers, body=body)
-        if CONFIG["reliable"]:
-            self._pending.append(method.delivery_tag)
-            return (msg, method.delivery_tag)
-        else:
-            return (msg, None)
-
-    def ack(self, delivery_tag):
-        """ Ack a message. """
-        log_debug("acking incoming message: %d" % (delivery_tag, ))
-        self._channel.basic_ack(delivery_tag=delivery_tag)
-        self._pending.remove(delivery_tag)
-
-    def idle(self):
-        """ Idle. """
-        self._channel.transport.connection.process_data_events()
-
-    def stop(self):
-        """ Stop. """
-        self._channel.stop_consuming()
-        self._connection.close()
-        self._connection = None
-
-
-class KombuIncomingBroker(KombuAdapter):
-    """ Kombu incoming broker object. """
-    direction = "incoming"
-
-    def __init__(self):
-        """ Initialize kombu incoming broker module. """
-        super(KombuIncomingBroker, self).__init__()
-        self._msgbuf = list()
-        self._pending = list()
-        self._consume = dict()
-
-    def _maybe_subscribe(self, subscription):
-        """ May be subscribe to queue. """
-        if "queue" in subscription:
-            queue_name = self._maybe_declare_queue(subscription["queue"])
-        else:
-            raise AmqpcltError("subscription must contain a queue")
-        exchange_name = None
-        if "exchange" in subscription:
-            exchange_name = self._maybe_declare_exchange(
-                subscription["exchange"])
-        if exchange_name:
-            self._maybe_bind(queue_name,
-                             exchange_name,
-                             subscription.get("routing_key", ""))
-        if queue_name not in self._consume:
-            log_debug("incoming consume from queue: %s" % (queue_name, ))
-            tag = get_uuid()
-            params = {"callback": self._handle_message,
-                      "no_ack": False,
-                      "queue": queue_name,
-                      "consumer_tag": tag}
-            if not CONFIG["reliable"]:
-                params["no_ack"] = True
-            self._channel.basic_consume(**params)
-            self._consume[queue_name] = tag
-
-    def _handle_message(self, msg):
-        """ Handle delivery. """
-        self._msgbuf.append((msg.delivery_info,
-                             msg.properties, msg.body))
-
-    def _drain_events(self, timeout=0.1):
-        """ Drain events. """
-        try:
-            self._connection.drain_events(timeout=timeout)
-        except socket.timeout:
-            pass
-        except socket.error:
-            pass
-
-    def start(self):
-        """ Start the incoming broker module. """
-        self.connect()
-        if CONFIG.get("prefetch") >= 0:
-            self._channel.basic_qos(prefetch_count=int(CONFIG["prefetch"]),
-                                    prefetch_size=0,
-                                    a_global=False)
-        subscribe = CONFIG.get("subscribe", [])
-        for sub in subscribe:
-            self._maybe_subscribe(sub)
-
-    def get(self):
-        """ Get a message. """
-        if len(self._msgbuf) == 0:
-            self._drain_events()
-        if len(self._msgbuf) == 0:
-            return ("no messages received", None)
-        (info, header, body) = self._msgbuf.pop(0)
-        if header.get("content_type") is not None and \
-            (header["content_type"].startswith("text/") or
-             "charset=" in header["content_type"]):
-            body = body.decode("utf-8")
-        headers = header["application_headers"]
-        for header_name, header_value in headers.items():
-            try:
-                headers[header_name] = header_value.encode("utf-8")
-            except UnicodeDecodeError:
-                headers[header_name] = header_value.decode("utf-8")
-        msg = Message(header=headers, body=body)
-        if CONFIG["reliable"]:
-            self._pending.append(info.get("delivery_tag"))
-            return (msg, info.get("delivery_tag"))
-        else:
-            return (msg, None)
-
-    def ack(self, delivery_tag):
-        """ Ack a message. """
-        log_debug("acking incoming message: %d" % (delivery_tag, ))
-        self._channel.basic_ack(delivery_tag=delivery_tag)
-        self._pending.remove(delivery_tag)
-
-    def idle(self):
-        """ Idle. """
-        self._drain_events()
-
-    def stop(self):
-        """ Stop. """
-        self._channel.close()
-        self._connection.close()
-        self._connection = None
-
-
-class IncomingQueue(object):
-    """ Incoming queue object. """
-
-    def __init__(self):
-        """ Initialize incoming queue module. """
-        self._queue = None
-        self._path = None
-        self._eoq = None
-        self._lock_failures = None
-        self._purge_time = 0
-
-    def _purge(self):
-        """ Purge at most every 5 minutes. """
-        if self._purge_time is None or time.time() < self._purge_time:
-            return
-        self._queue.purge()
-        log_debug("incoming queue has been purged")
-        self._purge_time = time.time() + 300
-
-    def start(self):
-        """ Start the incoming queue module. """
-        if CONFIG.get("incoming-queue-type") is None:
-            CONFIG["incoming-queue-type"] = "DQS"
-        self._queue = queue.new(CONFIG.get("incoming-queue").copy())
-        self._path = getattr(self._queue, "path", "")
-        self._eoq = True
-        log_debug(
-            "incoming queue %s %s" %
-            (CONFIG.get("incoming-queue-type"), self._path))
-
-    def get(self):
-        """ Get a message. """
-        elt = None
-        msg = None
-        if self._eoq:
-            # (re)start from beginning
-            self._purge()
-            log_debug(
-                "incoming queue has %d messages" % (self._queue.count(), ))
-            self._eoq = False
-            self._lock_failures = 0
-            elt = self._queue.first()
-            log_debug("first %s" % (elt, ))
-        else:
-            # progress from where we were
-            elt = self._queue.next()
-            log_debug("next %s" % (elt, ))
-        if not elt:
-            # reached the end
-            if not CONFIG["loop"]:
-                return ("", None)
-            self._eoq = True
-            if self._lock_failures == self._queue.count():
-                time.sleep(1)
-            return ("end of queue", None)
-        if not self._queue.lock(elt):
-            # cannot lock this one this time...
-            self._lock_failures += 1
-            return ("failed to lock", None)
-        log_debug("incoming message get %s/%s" % (self._path, elt))
-        msg = self._queue.get_message(elt)
-        if CONFIG["reliable"]:
-            return (msg, elt)
-        # otherwise not reliable
-        if CONFIG["remove"]:
-            log_debug("removing message %s/%s" % (self._path, elt))
-            self._queue.remove(elt)
-        else:
-            self._queue.unlock(elt)
-        return (msg, None)
-
-    def ack(self, msg_id):
-        """ Ack a message. """
-        if CONFIG["remove"]:
-            log_debug("incoming message remove %s/%s" %
-                      (self._path, msg_id))
-            self._queue.remove(msg_id)
-        else:
-            log_debug("incoming message unlock %s/%s" %
-                      (self._path, msg_id))
-            self._queue.unlock(msg_id)
-
-    def idle(self):
-        """ Idle. """
-        self._purge()
-
-    def stop(self):
-        """ Stop. """
-        self._queue = None
-
-
-class PikaOutgoingBroker(PikaAdapter):
-    """ Pika outgoing broker object. """
-    direction = "outgoing"
-
-    def __init__(self):
-        """ Initialize the outgoing broker module. """
-        super(PikaOutgoingBroker, self).__init__()
-
-    def start(self):
-        """ Start the outgoing broker module. """
-        self.connect()
-
-    def put(self, msg, msg_id=None):
-        """ Put a message. """
-        delivery_mode = 1
-        if msg.header.get("persistent", "false") == "true":
-            delivery_mode = 2
-        header = dict()
-        for key, val in msg.header.items():
-            if type(key) == unicode:
-                key = key.encode("utf-8")
-            if type(val) == unicode:
-                val = val.encode("utf-8")
-            header[key] = val
-        msg.header = header
-        properties = pika.BasicProperties(
-            timestamp=time.time(),
-            headers=msg.header,
-            delivery_mode=delivery_mode)
-        if "content-type" in msg.header:
-            content_type = msg.header["content-type"]
-            if content_type.startswith("text/") or \
-                    "charset=" in content_type:
-                if not msg.is_text():
-                    raise AmqpcltError("unexpected text content-type "
-                                       "for binary message: %s" % content_type)
-            else:
-                if msg.is_text():
-                    raise AmqpcltError("unexpected binary content-type for "
-                                       "text message: %s" % content_type)
-            properties.content_type = content_type
-        elif msg.is_text():
-            properties.content_type = "text/unknown"
-        # Send the message
-        if "destination" not in msg.header:
-            raise AmqpcltError("message doesn't have a destination: %s" % msg)
-        destination = _parse_sender_destination(msg.header["destination"])
-        if "queue" in destination:
-            queue_name = self._maybe_declare_queue(destination["queue"])
-        exch_name = self._maybe_declare_exchange(
-            destination.get("exchange", dict()))
-        if exch_name and "queue" in destination:
-            self._maybe_bind(queue_name,
-                             exch_name,
-                             destination.get("routing_key", ""))
-        if type(msg.body) == unicode:
-            body = msg.body.encode("utf-8")
-        else:
-            body = msg.body
-        self._channel.basic_publish(
-            exchange=exch_name,
-            routing_key=destination.get("routing_key", ""),
-            body=body,
-            properties=properties)
-        if msg_id is None:
-            return list()
-        else:
-            return [msg_id, ]
-
-    def idle(self):
-        """ Idle. """
-        return list()
-
-    def stop(self):
-        """ Stop. """
-        self._connection.close()
-        self._channel = None
-        self._connection = None
-
-
-class KombuOutgoingBroker(KombuAdapter):
-    """ Kombu outgoing broker object. """
-    direction = "outgoing"
-
-    def __init__(self):
-        """ Initialize the kombu outgoing broker module. """
-        super(KombuOutgoingBroker, self).__init__()
-        self._producer = None
-
-    def start(self):
-        """ Start the kombu outgoing broker module. """
-        self.connect()
-        self._producer = kombu.Producer(self._channel)
-
-    def put(self, msg, msg_id=None):
-        """ Put a message. """
-        delivery_mode = 1
-        if msg.header.get("persistent", "false") == "true":
-            delivery_mode = 2
-        # Send the message
-        if "destination" not in msg.header:
-            raise AmqpcltError("message doesn't have a destination: %s" % msg)
-        destination = _parse_sender_destination(msg.header["destination"])
-        if "queue" in destination:
-            queue_name = self._maybe_declare_queue(destination["queue"])
-        exch_name = self._maybe_declare_exchange(
-            destination.get("exchange", dict()))
-        if exch_name and "queue" in destination:
-            self._maybe_bind(queue_name,
-                             exch_name,
-                             destination.get("routing_key", ""))
-        extra = dict()
-        if "content-type" in msg.header:
-            content_type = msg.header["content-type"]
-            if content_type.startswith("text/") or \
-                    "charset=" in content_type:
-                if not msg.is_text():
-                    raise AmqpcltError("unexpected text content-type "
-                                       "for binary message: %s" % content_type)
-            else:
-                if msg.is_text():
-                    raise AmqpcltError("unexpected binary content-type for "
-                                       "text message: %s" % content_type)
-            extra["content_type"] = content_type
-        elif msg.is_text():
-            extra["content_type"] = "text/unknown"
-        self._producer.publish(
-            exchange=exch_name,
-            routing_key=destination.get("routing_key", ""),
-            delivery_mode=delivery_mode,
-            serializer=None,
-            compression=None,
-            headers=msg.header,
-            body=msg.body, **extra)
-        if msg_id is None:
-            return list()
-        else:
-            return [msg_id, ]
-
-    def idle(self):
-        """ Idle. """
-        return list()
-
-    def stop(self):
-        """ Stop. """
-        self._connection.close()
-        self._channel = None
-        self._connection = None
-
-
-class OutgoingQueue(object):
-    """ Outgoing queue object. """
-
-    def __init__(self):
-        """ Initialize the outgoing queue module. """
-        self._queue = None
-        self._path = None
-
-    def start(self):
-        """ Start the outgoing queue module. """
-        if CONFIG.get("outgoing-queue-type") is None:
-            CONFIG["outgoing-queue-type"] = "DQS"
-        self._queue = queue.new(CONFIG.get("outgoing-queue").copy())
-        self._path = getattr(self._queue, "path", "")
-        log_debug("outgoing queue %s %s" %
-                  (CONFIG.get("outgoing-queue-type"), self._path))
-
-    def put(self, msg, element_id=None):
-        """ Put a message. """
-        elt = self._queue.add_message(msg)
-        log_debug("outgoing message added %s/%s" % (self._path, elt))
-        if element_id is None:
-            return list()
-        else:
-            return [element_id, ]
-
-    def idle(self):
-        """ Idle. """
-        return list()
-
-    def stop(self):
-        """ Stop. """
-        self._queue = None
 
 
 _KEYVALUE_RE = re.compile("[, ]")
@@ -1499,26 +642,26 @@ def _get_kv_from_string(given):
     return result
 
 
-def _clean_configuration():
+def _clean_configuration(config):
     """ Clean configuration. """
     for arg, arg_props in ARGUMENTS.items():
-        val = CONFIG.get(arg)
+        val = config.get(arg)
         if val is not None and arg_props.get("type", str) in [int, float]:
             try:
                 val = arg_props.get("type", str)(val)
             except ValueError:
-                raise AmqpcltError("%s must be of %s type" %
-                                   arg_props.get("type", str))
-            CONFIG[arg] = val
+                raise ValueError(
+                    "%s must be of %s type" % arg_props.get("type", str))
+            config[arg] = val
 
     for arg in ["incoming-queue", "outgoing-queue", "subscribe"]:
-        val = CONFIG.get(arg)
+        val = config.get(arg)
         if val is None:
             continue
         if type(val) in [str, unicode]:
             # explode it
             newval = _get_kv_from_string(val)
-            CONFIG[arg] = newval
+            config[arg] = newval
         elif type(val) == list:
             newval = list()
             for value in val:
@@ -1528,10 +671,10 @@ def _clean_configuration():
                 else:
                     new_value = value
                 newval.append(new_value)
-            CONFIG[arg] = newval
+            config[arg] = newval
 
     for auth in ["incoming-broker-auth", "outgoing-broker-auth"]:
-        val = CONFIG.get(auth)
+        val = config.get(auth)
         if val is None:
             continue
         elif type(val) == str:
@@ -1543,33 +686,32 @@ def _clean_configuration():
                 val[key] = value.encode()
             cred = credential.new(**val)
         cred.check()
-        CONFIG[auth] = cred
+        config[auth] = cred
 
 
 def option_parse():
     """ Parse options. """
-    global CONFIG
-    args = read_args()
+    args = _read_args()
     conf_path = args.get("conf", None)
     merged = dict()
     if conf_path is not None:
         merged = read_apache_config(
             os.path.abspath(conf_path),
             {"InterPolateVars": True, })
-    merged = _merge(merged, args)
-    CONFIG = TreeDict(merged)
-    _clean_configuration()
+    merged.update(args)
+    config = TreeDict(merged)
+    _clean_configuration(config)
 
-    mutex(CONFIG, "quit", "status")
-    reqall(CONFIG, "quit", "pidfile")
-    reqall(CONFIG, "status", "pidfile")
+    mutex(config, "quit", "status")
+    reqall(config, "quit", "pidfile")
+    reqall(config, "status", "pidfile")
 
-    if "quit" in CONFIG:
-        pid = pid_read(CONFIG["pidfile"])
-        timeout_linger = CONFIG.get("timeout-linger")
+    if "quit" in config:
+        pid = pid_read(config["pidfile"])
+        timeout_linger = config.get("timeout-linger")
         if pid and timeout_linger is not None:
             print("%s (pid %d) is being told to quit..." % (PROG, pid))
-            pid_write(CONFIG["pidfile"], pid, "quit")
+            pid_write(config["pidfile"], pid, "quit")
             while timeout_linger >= 0:
                 try:
                     os.kill(pid, 0)
@@ -1582,34 +724,34 @@ def option_parse():
             except OSError:
                 print("%s (pid %d) does not seem to be running anymore" %
                       (PROG, pid))
-                pid_quit(CONFIG["pidfile"])
+                pid_quit(config["pidfile"])
                 sys.exit(0)
-        pid_quit(CONFIG["pidfile"], PROG)
+        pid_quit(config["pidfile"], PROG)
         sys.exit(0)
-    if "status" in CONFIG:
-        (status, message) = pid_status(CONFIG["pidfile"], 60)
+    if "status" in config:
+        (status, message) = pid_status(config["pidfile"], 60)
         print("%s %s" % (PROG, message))
         sys.exit(status)
 
-    reqany(CONFIG, None, "incoming-broker", "incoming-queue")
-    reqany(CONFIG, None, "outgoing-broker", "outgoing-queue")
-    reqall(CONFIG, "loop", "incoming-queue")
-    reqall(CONFIG, "remove", "incoming-queue")
-    reqall(CONFIG, "prefetch", "incoming-broker")
-    reqall(CONFIG, "subscribe", "incoming-broker")
-    reqall(CONFIG, "incoming-broker", "subscribe")
-    mutex(CONFIG, "incoming-broker", "incoming-queue")
-    mutex(CONFIG, "outgoing-broker", "outgoing-queue")
-    mutex(CONFIG, "callback-code", "callback-path")
-    mutex(CONFIG, "daemon", "statistics")
-    reqany(CONFIG, "callback-data", "callback-code", "callback-path")
-    reqany(CONFIG, "heart-beat", "incoming-broker", "outgoing-broker")
+    reqany(config, None, "incoming-broker", "incoming-queue")
+    reqany(config, None, "outgoing-broker", "outgoing-queue")
+    reqall(config, "loop", "incoming-queue")
+    reqall(config, "remove", "incoming-queue")
+    reqall(config, "prefetch", "incoming-broker")
+    reqall(config, "subscribe", "incoming-broker")
+    reqall(config, "incoming-broker", "subscribe")
+    mutex(config, "incoming-broker", "incoming-queue")
+    mutex(config, "outgoing-broker", "outgoing-queue")
+    mutex(config, "callback-code", "callback-path")
+    mutex(config, "daemon", "statistics")
+    reqany(config, "callback-data", "callback-code", "callback-path")
+    reqany(config, "heart-beat", "incoming-broker", "outgoing-broker")
 
     for opt, val in DEFAULT_OPTIONS.items():
-        CONFIG.setdefault(opt, val)
+        config.setdefault(opt, val)
 
     new_subscribe = list()
-    subscriptions = CONFIG.get("subscribe", [])
+    subscriptions = config.get("subscribe", [])
     if type(subscriptions) != list:
         subscriptions = [subscriptions, ]
     for sub in subscriptions:
@@ -1617,309 +759,26 @@ def option_parse():
             sub = dict([tuple(sub.split("=")), ])
         destination = sub.get("destination", None)
         if destination is None:
-            raise AmqpcltError("subscribe destination must be provided")
-        new_subscribe.append(_parse_subscribe_destination(destination))
-    CONFIG["subscribe"] = new_subscribe
+            raise ValueError("subscribe destination must be provided")
+        new_subscribe.append(
+            amqpclt.common.parse_subscribe_destination(destination))
+    config["subscribe"] = new_subscribe
 
-    if "prefetch" not in CONFIG and CONFIG["reliable"] and CONFIG.get("count"):
-        CONFIG["prefetch"] = min(CONFIG.get("count", 100), 100)
+    if "prefetch" not in config and config["reliable"] and config.get("count"):
+        config["prefetch"] = min(config.get("count", 100), 100)
 
-    if CONFIG["loglevel"] == "debug":
-        pp.pprint(CONFIG)
-
-
-def initialize_log(stdout=False):
-    """
-    Initialize the log system.
-
-    If stdout is set to True then the log is initialized to print
-    to stdout independently from the configuration.
-    """
-    options = {
-        "loglevel": CONFIG.get('loglevel', 'warning'),
-    }
-    if "logfile" in CONFIG:
-        options["logfile"] = CONFIG.get('logfile')
-    if stdout:
-        logsystem = "stdout"
-    else:
-        logsystem = CONFIG.get('log', DEFAULT_OPTIONS['log'])
-    log.LOG = log.get_log(logsystem)('amqpclt', **options)
+    if config["loglevel"] == "debug":
+        PP.pprint(config)
+    return config
 
 
-def initialize_callback():
-    """ Initialize callback. """
-    if CONFIG.get("callback", None) is None:
-        return
-    callback_code = CONFIG.get("callback-code")
-    callback_path = CONFIG.get("callback-path")
-    if callback_code is not None:
-        log_debug("callback inline")
-        if re.search("^\s*def ", callback_code, re.MULTILINE):
-            code = callback_code
-        else:
-            code = "\n    "
-            code += "\n    ".join(callback_code.splitlines())
-            code = ("""
-def check(self, msg):
-    hdr = msg.header
-""" + code + """
-    return msg""")
-    elif callback_path is not None:
-        log_debug("callback file %s" % (callback_path, ))
-        try:
-            call_file = open(callback_path, "r")
-            code = call_file.read()
-        except IOError:
-            error = sys.exc_info()[1]
-            raise AmqpcltError("invalid callback file: %s" % error)
-        else:
-            call_file.close()
-    else:
-        raise AmqpcltError("callback parameters not complete")
-    global CALLBACK
-    try:
-        CALLBACK = _callback_module(code)()
-    except SyntaxError:
-        error = sys.exc_info()[1]
-        raise AmqpcltError("syntax error in the callback: %s" % error)
-    if not hasattr(CALLBACK, "check"):
-        raise AmqpcltError("check(message) missing in callback: %s")
-    callback_data = CONFIG.get("callback-data")
-    if callback_data is None:
-        CONFIG["callback-data"] = list()
-    else:
-        callback_data = callback_data.split(",")
-        CONFIG["callback-data"] = callback_data
-
-
-def initialize_daemon():
-    """ Initialize daemon. """
-    if not CONFIG.get("daemon"):
-        return
-    daemonize()
-    log_debug("daemonized")
-
-
-def initialize():
-    """ Initialize. """
-    option_parse()
-    initialize_log()
-    initialize_callback()
-    initialize_daemon()
-    if CONFIG.get("pidfile"):
-        pid_write(CONFIG["pidfile"], os.getpid(), excl=True)
-
-
-def handle_sig(signum, _):
-    """ Handle signals. """
-    global running
-    if signum == signal.SIGINT:
-        log_debug("caught SIGINT")
-        running = False
-    elif signum == signal.SIGTERM:
-        log_debug("caught SIGTERM")
-        running = False
-    elif signum == signal.SIGHUP:
-        log_debug("caught SIGHUP, ignoring it")
-
-
-@log.log_exceptions(re_raise=False)
-def work():
-    """ Do it! """
-    global running
-    pending = dict()
-    put_list = list()
-    timek = dict()
-    timek["start"] = time.time()
-    log_debug("starting")
-    signal.signal(signal.SIGINT, handle_sig)
-    signal.signal(signal.SIGTERM, handle_sig)
-    signal.signal(signal.SIGHUP, handle_sig)
-    if CONFIG.get("incoming-broker") is not None:
-        mtype = CONFIG.get("incoming-broker-module") or "pika"
-        if mtype == "kombu":
-            incoming = KombuIncomingBroker()
-        elif mtype == "pika":
-            incoming = PikaIncomingBroker()
-        else:
-            raise AmqpcltError("invalid incoming broker module: %s" % (mtype))
-    else:
-        incoming = IncomingQueue()
-    if CONFIG.get("outgoing-broker") is not None:
-        mtype = CONFIG.get("outgoing-broker-module") or "pika"
-        if mtype == "kombu":
-            outgoing = KombuOutgoingBroker()
-        elif mtype == "pika":
-            outgoing = PikaOutgoingBroker()
-        else:
-            raise AmqpcltError("invalid outgoing broker module: %s" % (mtype))
-    else:
-        outgoing = OutgoingQueue()
-    incoming.start()
-    if not CONFIG["lazy"]:
-        outgoing.start()
-    if CONFIG.get("callback", None) is not None:
-        CALLBACK.start(*CONFIG["callback"]["data"])
-    log_debug("running")
-    count = size = 0
-    if CONFIG.get("duration") is not None:
-        timek["max"] = time.time() + CONFIG["duration"]
-    else:
-        timek["max"] = 0
-    tina = CONFIG.get("timeout-inactivity")
-    if tina is not None:
-        timek["ina"] = time.time() + tina
-    else:
-        timek["ina"] = 0
-    running = True
-    while running:
-        # are we done
-        if CONFIG.get("count") is not None and count >= CONFIG["count"]:
-            break
-        if timek["max"] and time.time() > timek["max"]:
-            break
-        # get message
-        if CONFIG["reliable"]:
-            if CONFIG.get("window") >= 0 and len(pending) > CONFIG("window"):
-                incoming.idle()
-                (msg, msg_id) = ("too many pending acks", None)
-            else:
-                (msg, msg_id) = incoming.get()
-                if type(msg) != str:
-                    if msg_id in pending:
-                        log_debug("duplicate ack id: %s" % (msg_id, ))
-                        sys.exit(1)
-                    else:
-                        pending[msg_id] = True
-        else:
-            (msg, msg_id) = incoming.get()
-        # check inactivity
-        if timek.get("ina"):
-            if isinstance(msg, Message):
-                timek["ina"] = time.time() + tina
-            elif time.time() >= timek["ina"]:
-                break
-        # count and statistics
-        if isinstance(msg, Message):
-            count += 1
-            if CONFIG["statistics"]:
-                size += msg.size()
-                if count == 1:
-                    timek["first"] = time.time()
-        # callback
-        if CONFIG.get("callback") is not None:
-            if type(msg) != str:
-                msg = CALLBACK.check(msg)
-                if not isinstance(msg, Message):
-                    log_debug("message discarded by callback: %s" % (msg, ))
-                    # message discarded by callback
-                    if CONFIG["reliable"]:
-                        if msg_id not in pending:
-                            raise AmqpcltError(
-                                "unexpected ack id: %s" % (msg_id, ))
-                        del(pending[msg_id])
-                        incoming.ack(msg_id)
-                    if CONFIG["statistics"]:
-                        timek["last"] = time.time()
-            else:
-                CALLBACK.idle()
-        # put | idle
-        if isinstance(msg, Message):
-            log_debug("loop got new message")
-            if CONFIG["lazy"]:
-                outgoing.start()
-                CONFIG["lazy"] = False
-            put_list = outgoing.put(msg, msg_id)
-            if CONFIG["statistics"]:
-                timek["last"] = time.time()
-        else:
-            if msg:
-                log_debug("loop %s" % (msg, ))
-            else:
-                log_debug("loop end")
-                running = False
-            if CONFIG["lazy"]:
-                put_list = list()
-            else:
-                put_list = outgoing.idle()
-        # ack
-        for msg_id in put_list:
-            if msg_id not in pending:
-                raise AmqpcltError("unexpected ack id: %s" % (msg_id, ))
-            del(pending[msg_id])
-            incoming.ack(msg_id)
-        # check --quit and show that we are alive
-        if CONFIG.get("pidfile"):
-            action = pid_check(CONFIG["pidfile"])
-            if action == "quit":
-                log_debug("asked to quit")
-                break
-            pid_touch(CONFIG["pidfile"])
-    # linger
-    log_debug("linger")
-    timeout_linger = CONFIG.get("timeout-linger")
-    if timeout_linger:
-        timek["max"] = time.time() + timeout_linger
-    else:
-        timek["max"] = 0
-    running = True
-    while running:
-        if not pending:
-            break
-        if "max" in timek and time.time() >= timek["max"]:
-            break
-        put_list = outgoing.idle()
-        if put_list:
-            for msg_id in put_list:
-                if msg_id not in pending:
-                    raise AmqpcltError("unexpected ack id: %s" % (msg_id, ))
-                del(pending[msg_id])
-                incoming.ack(msg_id)
-        else:
-            incoming.idle()
-    if pending:
-        raise AmqpcltError("%d pending messages" % len(pending))
-    # report statistics
-    if CONFIG.get("statistics"):
-        if count == 0:
-            print("no messages processed")
-        elif count == 1:
-            print("only 1 message processed")
-        else:
-            timek["elapsed"] = timek["last"] - timek["first"]
-            print(("processed %d messages in %.3f seconds"
-                   " (%.3f k messages/second)") %
-                  (count, timek["elapsed"], count / timek["elapsed"] / 1000))
-            print("troughput is around %.3f MB/second" %
-                  (size / timek["elapsed"] / 1024 / 1024))
-            print("average message size is around %d bytes" %
-                  (int(size / count + 0.5)))
-    # stop
-    log_debug("stopping")
-    if CONFIG.get("callback", None) is not None:
-        log_debug("stopping callback")
-        CALLBACK.stop()
-    if not CONFIG.get("lazy"):
-        log_debug("stopping outgoing")
-        outgoing.stop()
-    log_debug("stopping incoming")
-    incoming.stop()
-    log_debug("incoming stopped")
-    timek["stop"] = time.time()
-    timek["elapsed"] = timek["stop"] - timek["start"]
-    log_debug("work processed %d messages in %.3f seconds" %
-              (count, timek["elapsed"]))
-
-
-def clean():
-    """ Clean before exiting. """
-    if CONFIG.get("pidfile"):
-        pid_remove(CONFIG.get("pidfile"))
-    if CONFIG.get("daemon"):
-        syslog.closelog()
+def main():
+    """ Launch execution. """
+    config = option_parse()
+    client = amqpclt.client.Client(config)
+    client.initialize()
+    client.work()
+    client.clean()
 
 if __name__ == "__main__":
-    initialize()
-    work()
-    clean()
+    main()

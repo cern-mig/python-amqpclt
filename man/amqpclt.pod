@@ -91,7 +91,7 @@ execute the Python code in the given file on each message, see the "CALLBACK" se
 
 =item B<--conf> I<PATH>
 
-use the given configuration file, see theCONFIGURATION FILE section for more information
+use the given configuration file, see theconfigURATION FILE section for more information
 
 =item B<-c, --count> I<INTEGER>
 
