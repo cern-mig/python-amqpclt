@@ -17,5 +17,5 @@ install:
   - python setup.py install --no-data-files
 # command to run tests
 script:
-  - pep8 bin/amqpclt test
+  - pep8 bin/amqpclt amqpclt test
   - python setup.py test
