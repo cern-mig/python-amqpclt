@@ -115,8 +115,10 @@ def check(self, msg):
     def _initialize_daemon(self):
         """ Initialize daemon. """
         if not self._config.get("daemon"):
+            self.work = log.log_exceptions(re_raise=True)(self.work)
             return
         daemonize()
+        self.work = log.log_exceptions(re_raise=False)(self.work)
         log_debug("daemonized")
 
     def initialize(self):
@@ -138,7 +140,6 @@ def check(self, msg):
         elif signum == signal.SIGHUP:
             log_debug("caught SIGHUP, ignoring it")
 
-    @log.log_exceptions(re_raise=False)
     def work(self):
         """ Do it! """
         pending = dict()

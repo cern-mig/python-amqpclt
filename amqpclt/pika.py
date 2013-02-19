@@ -200,7 +200,7 @@ class PikaIncomingBroker(PikaAdapter):
     def get(self):
         """ Get a message. """
         if len(self._msgbuf) == 0:
-            self._channel.transport.connection.process_data_events()
+            self._connection.process_data_events()
         if len(self._msgbuf) == 0:
             return ("no messages received", None)
         (method, header, body) = self._msgbuf.pop(0)
@@ -229,7 +229,7 @@ class PikaIncomingBroker(PikaAdapter):
 
     def idle(self):
         """ Idle. """
-        self._channel.transport.connection.process_data_events()
+        self._connection.process_data_events()
 
     def stop(self):
         """ Stop. """
