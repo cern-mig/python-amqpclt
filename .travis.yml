@@ -14,8 +14,8 @@ install:
   - pip install amqplib --use-mirrors
   - pip install kombu --use-mirrors
   - pip install pep8 --use-mirrors
-  - python setup.py install --no-data-files
 # command to run tests
 script:
   - pep8 bin/amqpclt amqpclt test
+  - python setup.py install --no-data-files
   - python setup.py test
