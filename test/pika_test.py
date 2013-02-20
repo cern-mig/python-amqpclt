@@ -55,20 +55,22 @@ class PikaTest(unittest.TestCase):
             msg.header = {"destination": dest}
             mq1.add_message(msg)
         self.assertEqual(count, mq1.count())
-        cmd1 = "python bin/amqpclt --incoming-queue path=%s" \
+        cmd1 = "python ./bin/amqpclt --incoming-queue path=%s" \
                " --outgoing-broker-uri %s " \
                " --outgoing-broker-auth plain,name=guest,pass=guest" \
                " --remove --loglevel debug" \
                % (mq1_path, self.broker)
-        (ret, out, err) = proc.timed_process(cmd1.split(), env=dict())
+        (ret, out, err) = proc.timed_process(
+            cmd1, env=dict(), shell=True)
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
-        cmd2 = "python bin/amqpclt --incoming-broker-uri %s" \
+        cmd2 = "python ./bin/amqpclt --incoming-broker-uri %s" \
                " --incoming-broker-auth plain,name=guest,pass=guest" \
                " --subscribe destination=%s" \
                " --outgoing-queue path=%s --count %d --reliable " \
                "--loglevel debug" \
                % (self.broker, dest, mq2_path, count)
-        (ret, out, err) = proc.timed_process(cmd2.split(), env=dict())
+        (ret, out, err) = proc.timed_process(
+            cmd2, env=dict(), shell=True)
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
         mq2 = DQS(path=mq2_path)
         for i in mq2:
