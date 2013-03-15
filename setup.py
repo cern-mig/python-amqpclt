@@ -1,3 +1,4 @@
+import amqpclt
 import sys
 
 _no_data_files = "--no-data-files"
@@ -7,7 +8,7 @@ if _no_data_files in sys.argv:
     sys.argv.remove(_no_data_files)
 
 NAME = "amqpclt"
-VERSION = "0.4"
+VERSION = amqpclt.VERSION
 DESCRIPTION = "Versatile AMQP client"
 LONG_DESCRIPTION = """
 amqpclt is a versatile tool to interact with messaging brokers speaking AMQP
@@ -22,7 +23,7 @@ AUTHOR = 'Massimo Paladin'
 AUTHOR_EMAIL = 'massimo.paladin@gmail.com'
 LICENSE = "ASL 2.0"
 PLATFORMS = "Any"
-URL = "https://github.com/mpaladin/amqpclt"
+URL = "https://github.com/cern-mig/python-amqpclt"
 CLASSIFIERS = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

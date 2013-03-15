@@ -2,7 +2,7 @@
 amqpclt
 =======
 
-.. image:: https://secure.travis-ci.org/mpaladin/python-amqpclt.png?branch=master
+.. image:: https://secure.travis-ci.org/cern-mig/python-amqpclt.png?branch=master
 
 Overview
 ========
@@ -32,7 +32,7 @@ Support and documentation
 After installing, you can find documentation for this module with the
 standard python help function command or at:
 
-    http://mpaladin.web.cern.ch/mpaladin/python/amqpclt/
+    https://amqpclt.readthedocs.org/
 
 License and Copyright
 =====================
