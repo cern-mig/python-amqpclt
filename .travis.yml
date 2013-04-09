@@ -26,5 +26,5 @@ script:
   - pep8 bin/amqpclt amqpclt test
   - python setup.py install --no-data-files
   - export PYTHONPATH=$PYTHONPATH:.
-  - ps -ax |grep rabbitmq
+  - ps |grep rabbitmq
   - python setup.py test
