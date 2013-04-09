@@ -10,6 +10,7 @@ python:
 install:
   - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install simplejson --use-mirrors; fi
   - pip install auth.credential --use-mirrors
+  - pip install argparse --use-mirrors || echo "no needed from 3.2 on, ok"
   - pip install dirq --use-mirrors
   - pip install messaging --use-mirrors
   - pip install pika --use-mirrors
