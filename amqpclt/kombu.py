@@ -54,7 +54,7 @@ class KombuAdapter(object):
             return queue_name
         if not queue_name:
             queue_name = get_uuid()
-        result = self._channel.queue_declare(
+        self._channel.queue_declare(
             queue=queue_name,
             durable=queue_props.get("durable", False),
             exclusive=queue_props.get("exclusive", False),
@@ -63,7 +63,7 @@ class KombuAdapter(object):
 #        if not queue_name:
 #            # amq generated queue
 #            queue_name = result.method.queue
-        log_debug("incoming queue declared: %s" % queue_name)
+        log_debug("incoming queue declared: %s" % (queue_name, ))
         self._queue[queue_name] = 1
         return queue_name
 
@@ -203,7 +203,7 @@ class KombuIncomingBroker(KombuAdapter):
         if len(self._msgbuf) == 0:
             self._drain_events()
         if len(self._msgbuf) == 0:
-            return ("no messages received", None)
+            return "no messages received", None
         (info, header, body) = self._msgbuf.pop(0)
         if header.get("content_type") is not None and \
             (header["content_type"].startswith("text/") or
@@ -218,9 +218,9 @@ class KombuIncomingBroker(KombuAdapter):
         msg = Message(header=headers, body=body)
         if self._config["reliable"]:
             self._pending.append(info.get("delivery_tag"))
-            return (msg, info.get("delivery_tag"))
+            return msg, info.get("delivery_tag")
         else:
-            return (msg, None)
+            return msg, None
 
     def ack(self, delivery_tag):
         """ Ack a message. """

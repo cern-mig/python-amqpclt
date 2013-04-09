@@ -18,7 +18,7 @@ import unittest
 
 def main():
     """ run the tests """
-    test_suite = test.all_tests.create_messagingtest_suite()
+    test_suite = test.all_tests.create_test_suite()
     unittest.TextTestRunner().run(test_suite)
 
 if __name__ == "__main__":

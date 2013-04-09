@@ -41,8 +41,6 @@ class IncomingQueue(object):
 
     def get(self):
         """ Get a message. """
-        elt = None
-        msg = None
         if self._eoq:
             # (re)start from beginning
             self._purge()
@@ -59,26 +57,26 @@ class IncomingQueue(object):
         if not elt:
             # reached the end
             if not self._config["loop"]:
-                return ("", None)
+                return "", None
             self._eoq = True
             if self._lock_failures == self._queue.count():
                 time.sleep(1)
-            return ("end of queue", None)
+            return "end of queue", None
         if not self._queue.lock(elt):
             # cannot lock this one this time...
             self._lock_failures += 1
-            return ("failed to lock", None)
+            return "failed to lock", None
         log_debug("incoming message get %s/%s" % (self._path, elt))
         msg = self._queue.get_message(elt)
         if self._config["reliable"]:
-            return (msg, elt)
+            return msg, elt
         # otherwise not reliable
         if self._config["remove"]:
             log_debug("removing message %s/%s" % (self._path, elt))
             self._queue.remove(elt)
         else:
             self._queue.unlock(elt)
-        return (msg, None)
+        return msg, None
 
     def ack(self, msg_id):
         """ Ack a message. """

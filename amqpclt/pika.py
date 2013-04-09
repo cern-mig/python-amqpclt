@@ -202,7 +202,7 @@ class PikaIncomingBroker(PikaAdapter):
         if len(self._msgbuf) == 0:
             self._connection.process_data_events()
         if len(self._msgbuf) == 0:
-            return ("no messages received", None)
+            return "no messages received", None
         (method, header, body) = self._msgbuf.pop(0)
         if header.content_type is not None and \
             (header.content_type.startswith("text/") or
@@ -217,9 +217,9 @@ class PikaIncomingBroker(PikaAdapter):
         msg = Message(header=header.headers, body=body)
         if self._config["reliable"]:
             self._pending.append(method.delivery_tag)
-            return (msg, method.delivery_tag)
+            return msg, method.delivery_tag
         else:
-            return (msg, None)
+            return msg, None
 
     def ack(self, delivery_tag):
         """ Ack a message. """

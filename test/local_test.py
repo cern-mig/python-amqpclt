@@ -12,13 +12,10 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
-import amqpclt
 
 import mtb.proc as proc
 
 import os
-import re
-import sys
 import shutil
 import unittest
 
@@ -53,7 +50,7 @@ class LocalTest(unittest.TestCase):
         cmd = "python bin/amqpclt --incoming-queue path=%s" \
               " --outgoing-queue path=%s --remove --loglevel debug" \
               % (mq1_path, mq2_path)
-        (ret, out, err) = proc.timed_process(cmd.split(), env=dict())
+        (ret, out, err) = proc.timed_process(cmd.split())
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
         mq2 = DQS(path=mq2_path)
         for i in mq2:

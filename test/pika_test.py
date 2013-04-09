@@ -12,13 +12,10 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
-import amqpclt
 
 import mtb.proc as proc
 
 import os
-import re
-import sys
 import shutil
 import unittest
 
@@ -61,7 +58,7 @@ class PikaTest(unittest.TestCase):
                " --remove --loglevel debug" \
                % (mq1_path, self.broker)
         (ret, out, err) = proc.timed_process(
-            cmd1, env=dict(), shell=True)
+            cmd1, shell=True)
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
         cmd2 = "python ./bin/amqpclt --incoming-broker-uri %s" \
                " --incoming-broker-auth plain,name=guest,pass=guest" \
@@ -70,7 +67,7 @@ class PikaTest(unittest.TestCase):
                "--loglevel debug" \
                % (self.broker, dest, mq2_path, count)
         (ret, out, err) = proc.timed_process(
-            cmd2, env=dict(), shell=True)
+            cmd2, shell=True)
         self.assertEqual(0, ret, "out: %s\nerr: %s" % (out, err))
         mq2 = DQS(path=mq2_path)
         for i in mq2:

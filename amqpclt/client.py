@@ -158,7 +158,7 @@ def check(self, msg):
                 incoming = amqpclt.pika.PikaIncomingBroker(self._config)
             else:
                 raise AmqpcltError(
-                    "invalid incoming broker module: %s" % (mtype))
+                    "invalid incoming broker module: %s" % (mtype, ))
         else:
             incoming = amqpclt.queue.IncomingQueue(self._config)
         if self._config.get("outgoing-broker") is not None:
@@ -169,7 +169,7 @@ def check(self, msg):
                 outgoing = amqpclt.pika.PikaOutgoingBroker(self._config)
             else:
                 raise AmqpcltError(
-                    "invalid outgoing broker module: %s" % (mtype))
+                    "invalid outgoing broker module: %s" % (mtype, ))
         else:
             outgoing = amqpclt.queue.OutgoingQueue(self._config)
         incoming.start()
