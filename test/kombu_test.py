@@ -37,8 +37,8 @@ class PikaTest(unittest.TestCase):
         shutil.rmtree(self.path, ignore_errors=True)
 
     def test_full_chain(self):
-        """ Test queue 2 queue. """
-        print("checking kombu fullchain")
+        """ Test kombu full chain. """
+        print("checking kombu full chain")
         try:
             import kombu
         except ImportError:

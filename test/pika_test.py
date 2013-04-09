@@ -37,8 +37,8 @@ class PikaTest(unittest.TestCase):
         shutil.rmtree(self.path, ignore_errors=True)
 
     def test_full_chain(self):
-        """ Test queue 2 queue. """
-        print("checking pika fullchain")
+        """ Test pika full chain. """
+        print("checking pika full chain")
         mq1_path = self.path + "/mq1"
         mq2_path = self.path + "/mq2"
         mq1 = DQS(path=mq1_path)
