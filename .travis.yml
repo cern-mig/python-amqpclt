@@ -6,9 +6,8 @@ python:
   - "2.5"
   - "2.6"
   - "2.7"
-before_install:
-  - sudo apt-get update
-  - sudo apt-get install rabbitmq-server -y
+services:
+  - rabbitmq
 # command to install dependencies
 install:
   - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install simplejson --use-mirrors; fi
@@ -26,5 +25,4 @@ script:
   - pep8 bin/amqpclt amqpclt test
   - python setup.py install --no-data-files
   - export PYTHONPATH=$PYTHONPATH:.
-  - ps |grep rabbitmq
   - python setup.py test
