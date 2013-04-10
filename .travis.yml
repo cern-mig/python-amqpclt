@@ -15,7 +15,7 @@ install:
   - pip install argparse --use-mirrors || echo "no needed from 3.2 on, ok"
   - pip install dirq --use-mirrors
   - pip install messaging --use-mirrors
-  - pip install pika --use-mirrors
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install pika==0.9.9 --use-mirrors; else pip install pika --use-mirrors; fi
   - pip install anyjson --use-mirrors
   - pip install amqplib --use-mirrors
   - pip install kombu --use-mirrors
