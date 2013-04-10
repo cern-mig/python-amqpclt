@@ -1,6 +1,6 @@
-#notifications:
-#  email:
-#    - mig-travis@cern.ch
+notifications:
+  email:
+    - mig-travis@cern.ch
 language: python
 python:
   - "2.5"
@@ -12,9 +12,10 @@ services:
 install:
   - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install simplejson --use-mirrors; fi
   - pip install auth.credential --use-mirrors
-  - pip install argparse --use-mirrors || echo "no needed from 3.2 on, ok"
+  - pip install argparse --use-mirrors || echo "not needed from 3.2 on, ok"
   - pip install dirq --use-mirrors
   - pip install messaging --use-mirrors
+# pika versions from 0.9.10 to 0.9.12 are not compatible with python 2.5
   - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install pika==0.9.9 --use-mirrors; else pip install pika --use-mirrors; fi
   - pip install anyjson --use-mirrors
   - pip install amqplib --use-mirrors
@@ -24,5 +25,6 @@ install:
 script:
   - pep8 bin/amqpclt amqpclt test
   - python setup.py install --no-data-files
+# changing python path to include current directory in order to run tests
   - export PYTHONPATH=$PYTHONPATH:.
   - python setup.py test
