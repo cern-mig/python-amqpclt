@@ -24,7 +24,7 @@ from messaging.queue.dqs import DQS
 from messaging.generator import rndstr
 
 
-class PikaTest(unittest.TestCase):
+class KombuTest(unittest.TestCase):
     broker = "amqp://localhost:5672//"
 
     def setUp(self):

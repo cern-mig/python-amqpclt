@@ -3,6 +3,7 @@ Change log for amqpclt
 X.X X X X X
     * [mp] bug fixing
     * [mp] improvements
+    * [mp] changing logging facility to python logging
 
 0.4	Tue Sep 26 2012
 	* [mp] added some tests

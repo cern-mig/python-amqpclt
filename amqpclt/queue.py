@@ -1,11 +1,12 @@
 """
 Queues modules.
 """
+import logging
 import time
 
-from mtb.log import log_debug
-
 import messaging.queue as queue
+
+LOGGER = logging.getLogger("amqpclt")
 
 
 class IncomingQueue(object):
@@ -25,7 +26,7 @@ class IncomingQueue(object):
         if self._purge_time is None or time.time() < self._purge_time:
             return
         self._queue.purge()
-        log_debug("incoming queue has been purged")
+        LOGGER.debug("incoming queue has been purged")
         self._purge_time = time.time() + 300
 
     def start(self):
@@ -35,7 +36,7 @@ class IncomingQueue(object):
         self._queue = queue.new(self._config.get("incoming-queue").copy())
         self._path = getattr(self._queue, "path", "")
         self._eoq = True
-        log_debug(
+        LOGGER.debug(
             "incoming queue %s %s" %
             (self._config.get("incoming-queue-type"), self._path))
 
@@ -44,16 +45,16 @@ class IncomingQueue(object):
         if self._eoq:
             # (re)start from beginning
             self._purge()
-            log_debug(
+            LOGGER.debug(
                 "incoming queue has %d messages" % (self._queue.count(), ))
             self._eoq = False
             self._lock_failures = 0
             elt = self._queue.first()
-            log_debug("first %s" % (elt, ))
+            LOGGER.debug("first %s" % (elt, ))
         else:
             # progress from where we were
             elt = self._queue.next()
-            log_debug("next %s" % (elt, ))
+            LOGGER.debug("next %s" % (elt, ))
         if not elt:
             # reached the end
             if not self._config["loop"]:
@@ -66,13 +67,13 @@ class IncomingQueue(object):
             # cannot lock this one this time...
             self._lock_failures += 1
             return "failed to lock", None
-        log_debug("incoming message get %s/%s" % (self._path, elt))
+        LOGGER.debug("incoming message get %s/%s" % (self._path, elt))
         msg = self._queue.get_message(elt)
         if self._config["reliable"]:
             return msg, elt
         # otherwise not reliable
         if self._config["remove"]:
-            log_debug("removing message %s/%s" % (self._path, elt))
+            LOGGER.debug("removing message %s/%s" % (self._path, elt))
             self._queue.remove(elt)
         else:
             self._queue.unlock(elt)
@@ -81,11 +82,11 @@ class IncomingQueue(object):
     def ack(self, msg_id):
         """ Ack a message. """
         if self._config["remove"]:
-            log_debug("incoming message remove %s/%s" %
+            LOGGER.debug("incoming message remove %s/%s" %
                       (self._path, msg_id))
             self._queue.remove(msg_id)
         else:
-            log_debug("incoming message unlock %s/%s" %
+            LOGGER.debug("incoming message unlock %s/%s" %
                       (self._path, msg_id))
             self._queue.unlock(msg_id)
 
@@ -113,13 +114,13 @@ class OutgoingQueue(object):
             self._config["outgoing-queue-type"] = "DQS"
         self._queue = queue.new(self._config.get("outgoing-queue").copy())
         self._path = getattr(self._queue, "path", "")
-        log_debug("outgoing queue %s %s" %
+        LOGGER.debug("outgoing queue %s %s" %
                   (self._config.get("outgoing-queue-type"), self._path))
 
     def put(self, msg, element_id=None):
         """ Put a message. """
         elt = self._queue.add_message(msg)
-        log_debug("outgoing message added %s/%s" % (self._path, elt))
+        LOGGER.debug("outgoing message added %s/%s" % (self._path, elt))
         if element_id is None:
             return list()
         else:

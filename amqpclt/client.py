@@ -1,6 +1,7 @@
 """
 Main module.
 """
+import logging
 import os
 import re
 import signal
@@ -12,8 +13,8 @@ import amqpclt.kombu
 import amqpclt.pika
 from amqpclt.errors import AmqpcltError
 
-from mtb.log import log_debug
 import mtb.log as log
+import mtb.pid
 from mtb.pid import \
     pid_touch, pid_write, pid_check, pid_remove
 from mtb.proc import daemonize
@@ -46,6 +47,7 @@ class Client(object):
     """ Main client logic. """
 
     def __init__(self, config):
+        self.prog = 'amqpclt'
         self._running = False
         self._config = config
         self._callback = None
@@ -57,16 +59,25 @@ class Client(object):
         If stdout is set to True then the log is initialized to print
         to stdout independently from the configuration.
         """
-        options = {
-            "loglevel": self._config.get('loglevel', 'warning'),
-        }
-        if "logfile" in self._config:
-            options["logfile"] = self._config.get('logfile')
+        log_level = self._config.get("loglevel", "warning")
         if stdout:
-            logsystem = "stdout"
+            log.setup_log(self.prog, "stdout", log_level)
+            log.setup_log("pika", "stdout", log_level)
         else:
-            logsystem = self._config['log']
-        log.LOG = log.get_log(logsystem)('amqpclt', **options)
+            log_type = self._config.get("log", "stdout")
+            handler_options = dict()
+            if log_type == "file":
+                if "logfile" not in self._config:
+                    raise AttributeError(
+                        "logfile required for file log system")
+                handler_options['filename'] = self._config["logfile"]
+            extra = {
+                'handler_options': handler_options,
+                }
+            log.setup_log(self.prog, log_type, log_level, extra)
+            log.setup_log("pika", log_type, log_level, extra)
+        self.logger = logging.getLogger(self.prog)
+        mtb.pid.LOGGER = logging.getLogger(self.prog)
 
     def _initialize_callback(self):
         """ Initialize callback. """
@@ -75,7 +86,7 @@ class Client(object):
         callback_code = self._config.get("callback-code")
         callback_path = self._config.get("callback-path")
         if callback_code is not None:
-            log_debug("callback inline")
+            self.logger.debug("callback inline")
             if re.search("^\s*def ", callback_code, re.MULTILINE):
                 code = callback_code
             else:
@@ -87,7 +98,7 @@ def check(self, msg):
 """ + code + """
     return msg""")
         elif callback_path is not None:
-            log_debug("callback file %s" % (callback_path, ))
+            self.logger.debug("callback file %s" % (callback_path, ))
             try:
                 call_file = open(callback_path, "r")
                 code = call_file.read()
@@ -115,11 +126,15 @@ def check(self, msg):
     def _initialize_daemon(self):
         """ Initialize daemon. """
         if not self._config.get("daemon"):
-            self.work = log.log_exceptions(re_raise=True)(self.work)
+            self.work = log.log_exceptions(
+                logger_name=self.prog,
+                re_raise=True)(self.work)
             return
         daemonize()
-        self.work = log.log_exceptions(re_raise=False)(self.work)
-        log_debug("daemonized")
+        self.work = log.log_exceptions(
+            logger_name=self.prog,
+            re_raise=False)(self.work)
+        self.logger.debug("daemonized")
 
     def initialize(self):
         """ Initialize. """
@@ -132,13 +147,13 @@ def check(self, msg):
     def _handle_sig(self, signum, _):
         """ Handle signals. """
         if signum == signal.SIGINT:
-            log_debug("caught SIGINT")
+            self.logger.debug("caught SIGINT")
             self._running = False
         elif signum == signal.SIGTERM:
-            log_debug("caught SIGTERM")
+            self.logger.debug("caught SIGTERM")
             self._running = False
         elif signum == signal.SIGHUP:
-            log_debug("caught SIGHUP, ignoring it")
+            self.logger.debug("caught SIGHUP, ignoring it")
 
     def work(self):
         """ Do it! """
@@ -146,7 +161,7 @@ def check(self, msg):
         put_list = list()
         timek = dict()
         timek["start"] = time.time()
-        log_debug("starting")
+        self.logger.debug("starting")
         signal.signal(signal.SIGINT, self._handle_sig)
         signal.signal(signal.SIGTERM, self._handle_sig)
         signal.signal(signal.SIGHUP, self._handle_sig)
@@ -177,7 +192,7 @@ def check(self, msg):
             outgoing.start()
         if self._config.get("callback", None) is not None:
             self._callback.start(*self._config["callback"]["data"])
-        log_debug("running")
+        self.logger.debug("running")
         count = size = 0
         if self._config.get("duration") is not None:
             timek["max"] = time.time() + self._config["duration"]
@@ -206,7 +221,7 @@ def check(self, msg):
                     (msg, msg_id) = incoming.get()
                     if type(msg) != str:
                         if msg_id in pending:
-                            log_debug("duplicate ack id: %s" % (msg_id, ))
+                            self.logger.debug("duplicate ack id: %s" % (msg_id, ))
                             sys.exit(1)
                         else:
                             pending[msg_id] = True
@@ -230,7 +245,7 @@ def check(self, msg):
                 if type(msg) != str:
                     msg = self._callback.check(msg)
                     if not isinstance(msg, Message):
-                        log_debug(
+                        self.logger.debug(
                             "message discarded by callback: %s" % (msg, ))
                         # message discarded by callback
                         if self._config["reliable"]:
@@ -245,7 +260,7 @@ def check(self, msg):
                     self._callback.idle()
             # put | idle
             if isinstance(msg, Message):
-                log_debug("loop got new message")
+                self.logger.debug("loop got new message")
                 if self._config["lazy"]:
                     outgoing.start()
                     self._config["lazy"] = False
@@ -254,9 +269,9 @@ def check(self, msg):
                     timek["last"] = time.time()
             else:
                 if msg:
-                    log_debug("loop %s" % (msg, ))
+                    self.logger.debug("loop %s" % (msg, ))
                 else:
-                    log_debug("loop end")
+                    self.logger.debug("loop end")
                     self._running = False
                 if self._config["lazy"]:
                     put_list = list()
@@ -272,11 +287,11 @@ def check(self, msg):
             if self._config.get("pidfile"):
                 action = pid_check(self._config["pidfile"])
                 if action == "quit":
-                    log_debug("asked to quit")
+                    self.logger.debug("asked to quit")
                     break
                 pid_touch(self._config["pidfile"])
         # linger
-        log_debug("linger")
+        self.logger.debug("linger")
         timeout_linger = self._config.get("timeout-linger")
         if timeout_linger:
             timek["max"] = time.time() + timeout_linger
@@ -317,19 +332,19 @@ def check(self, msg):
                 print("average message size is around %d bytes" %
                       (int(size / count + 0.5)))
         # stop
-        log_debug("stopping")
+        self.logger.debug("stopping")
         if self._config.get("callback", None) is not None:
-            log_debug("stopping callback")
+            self.logger.debug("stopping callback")
             self._callback.stop()
         if not self._config.get("lazy"):
-            log_debug("stopping outgoing")
+            self.logger.debug("stopping outgoing")
             outgoing.stop()
-        log_debug("stopping incoming")
+        self.logger.debug("stopping incoming")
         incoming.stop()
-        log_debug("incoming stopped")
+        self.logger.debug("incoming stopped")
         timek["stop"] = time.time()
         timek["elapsed"] = timek["stop"] - timek["start"]
-        log_debug("work processed %d messages in %.3f seconds" %
+        self.logger.debug("work processed %d messages in %.3f seconds" %
                   (count, timek["elapsed"]))
 
     def clean(self):

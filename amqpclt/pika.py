@@ -1,11 +1,11 @@
 """
 Pika modules.
 """
+import logging
 import re
 import ssl
 import time
 
-from mtb.log import log_debug
 from mtb.modules import md5_hash
 from mtb.string import get_uuid
 
@@ -14,6 +14,8 @@ from messaging.message import Message
 
 from amqpclt import common
 from amqpclt.errors import AmqpcltError
+
+LOGGER = logging.getLogger("amqpclt")
 
 
 class PikaAdapter(object):
@@ -48,7 +50,7 @@ class PikaAdapter(object):
         if (exch_name and
             not exch_name.startswith("amq.") and
                 exch_name not in self._exchange):
-            log_debug(
+            LOGGER.debug(
                 "declaring %s exchange: %s" %
                 (self.direction, exch_name))
             self._exchange[exch_name] = 1
@@ -75,7 +77,7 @@ class PikaAdapter(object):
         if not queue_name:
             # amq generated queue
             queue_name = result.method.queue
-        log_debug("incoming queue declared: %s" % (queue_name, ))
+        LOGGER.debug("incoming queue declared: %s" % (queue_name, ))
         self._queue[queue_name] = 1
         return queue_name
 
@@ -84,7 +86,7 @@ class PikaAdapter(object):
         bind_id = md5_hash(queue_name + exchange + routing_key).hexdigest()
         if bind_id in self._bind:
             return
-        log_debug(
+        LOGGER.debug(
             "binding incoming queue: queue=%s, exchange=%s, routing_key=%s" %
             (queue_name, exchange, routing_key))
         self._channel.queue_bind(queue=queue_name,
@@ -132,7 +134,7 @@ class PikaAdapter(object):
         self._connection = connection = self._pika.BlockingConnection(
             parameters)
         self._channel = connection.channel()
-        log_debug(
+        LOGGER.debug(
             "%s broker %s:%s: %s %s" %
             (direction, params['host'], params['port'], self.amqp_type(),
              connection.server_properties.get("version", "UNKNOWN"),))
@@ -173,7 +175,7 @@ class PikaIncomingBroker(PikaAdapter):
                              exchange_name,
                              subscription.get("routing_key", ""))
         if queue_name not in self._consume:
-            log_debug("incoming consume from queue: %s" % (queue_name, ))
+            LOGGER.debug("incoming consume from queue: %s" % (queue_name, ))
             tag = get_uuid()
             params = {"consumer_callback": self._handle_delivery,
                       "queue": queue_name,
@@ -223,7 +225,7 @@ class PikaIncomingBroker(PikaAdapter):
 
     def ack(self, delivery_tag):
         """ Ack a message. """
-        log_debug("acking incoming message: %d" % (delivery_tag, ))
+        LOGGER.debug("acking incoming message: %d" % (delivery_tag, ))
         self._channel.basic_ack(delivery_tag=delivery_tag)
         self._pending.remove(delivery_tag)
 
