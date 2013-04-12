@@ -73,7 +73,7 @@ class Client(object):
                 handler_options['filename'] = self._config["logfile"]
             extra = {
                 'handler_options': handler_options,
-                }
+            }
             log.setup_log(self.prog, log_type, log_level, extra)
             log.setup_log("pika", log_type, log_level, extra)
         self.logger = logging.getLogger(self.prog)
@@ -221,7 +221,8 @@ def check(self, msg):
                     (msg, msg_id) = incoming.get()
                     if type(msg) != str:
                         if msg_id in pending:
-                            self.logger.debug("duplicate ack id: %s" % (msg_id, ))
+                            self.logger.debug(
+                                "duplicate ack id: %s" % (msg_id, ))
                             sys.exit(1)
                         else:
                             pending[msg_id] = True
@@ -344,8 +345,9 @@ def check(self, msg):
         self.logger.debug("incoming stopped")
         timek["stop"] = time.time()
         timek["elapsed"] = timek["stop"] - timek["start"]
-        self.logger.debug("work processed %d messages in %.3f seconds" %
-                  (count, timek["elapsed"]))
+        self.logger.debug(
+            "work processed %d messages in %.3f seconds" %
+            (count, timek["elapsed"]))
 
     def clean(self):
         """ Clean before exiting. """

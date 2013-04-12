@@ -82,12 +82,12 @@ class IncomingQueue(object):
     def ack(self, msg_id):
         """ Ack a message. """
         if self._config["remove"]:
-            LOGGER.debug("incoming message remove %s/%s" %
-                      (self._path, msg_id))
+            LOGGER.debug(
+                "incoming message remove %s/%s" % (self._path, msg_id))
             self._queue.remove(msg_id)
         else:
-            LOGGER.debug("incoming message unlock %s/%s" %
-                      (self._path, msg_id))
+            LOGGER.debug(
+                "incoming message unlock %s/%s" % (self._path, msg_id))
             self._queue.unlock(msg_id)
 
     def idle(self):
@@ -114,8 +114,9 @@ class OutgoingQueue(object):
             self._config["outgoing-queue-type"] = "DQS"
         self._queue = queue.new(self._config.get("outgoing-queue").copy())
         self._path = getattr(self._queue, "path", "")
-        LOGGER.debug("outgoing queue %s %s" %
-                  (self._config.get("outgoing-queue-type"), self._path))
+        LOGGER.debug(
+            "outgoing queue %s %s" %
+            (self._config.get("outgoing-queue-type"), self._path))
 
     def put(self, msg, element_id=None):
         """ Put a message. """
