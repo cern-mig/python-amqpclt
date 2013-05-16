@@ -1,7 +1,7 @@
 amqpclt
 ===================
 
-amqpclt 0.4 - versatile AMQP client
+amqpclt 0.5 - versatile AMQP client
 
 SYNOPSIS
 --------

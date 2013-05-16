@@ -1,9 +1,9 @@
-Change log for amqpclt
+Change log for python-amqpclt
 
-X.X X X X X
-    * [mp] bug fixing
-    * [mp] improvements
-    * [mp] changing logging facility to python logging
+0.5	Thu May 16 2013
+	* [mp] bug fixing
+	* [mp] improvements
+	* [mp] changing logging facility to python logging
 
 0.4	Tue Sep 26 2012
 	* [mp] added some tests
