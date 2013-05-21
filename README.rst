@@ -3,6 +3,7 @@ amqpclt
 =======
 
 .. image:: https://secure.travis-ci.org/cern-mig/python-amqpclt.png?branch=master
+   :target: https://travis-ci.org/cern-mig/python-amqpclt
 
 Overview
 ========
