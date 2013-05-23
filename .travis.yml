@@ -27,7 +27,7 @@ install:
 # command to run tests
 script:
   - pep8 bin/amqpclt amqpclt test
-  - sh pylint.sh --rcfile .pylintrc bin/amqpclt amqpclt test || echo "*ignored*"
+  - sh pylint.sh bin/amqpclt amqpclt test || echo "*ignored*"
   - python setup.py install --no-data-files
 # changing python path to include current directory in order to run tests
   - export PYTHONPATH=$PYTHONPATH:.
