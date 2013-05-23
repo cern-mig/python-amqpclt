@@ -10,20 +10,24 @@ services:
   - rabbitmq
 # command to install dependencies
 install:
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install simplejson --use-mirrors; fi
-  - pip install auth.credential --use-mirrors
-  - pip install argparse --use-mirrors || echo "not needed from 3.2 on, ok"
-  - pip install dirq --use-mirrors
-  - pip install messaging --use-mirrors
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install --use-mirrors simplejson; fi
+  - pip install --use-mirrors auth.credential
+  - pip install --use-mirrors argparse || echo "not needed from 3.2 on, ok"
+  - pip install --use-mirrors dirq
+  - pip install --use-mirrors messaging
 # pika versions from 0.9.10 to 0.9.12 are not compatible with python 2.5
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install pika==0.9.9 --use-mirrors; else pip install pika --use-mirrors; fi
-  - pip install anyjson --use-mirrors
-  - pip install amqplib --use-mirrors
-  - pip install kombu --use-mirrors
-  - pip install pep8 --use-mirrors
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.5' ]]; then pip install --use-mirrors pika==0.9.9; else pip install --use-mirrors pika; fi
+  - pip install --use-mirrors anyjson
+  - pip install --use-mirrors amqplib
+  - pip install --use-mirrors kombu
+  - pip install --use-mirrors pep8
+  - pip install --use-mirrors pylint
+  - curl -O -R -S -f -s https://raw.github.com/cern-mig/dev-tools/master/python/pylint.sh
+  - curl -O -R -S -f -s https://raw.github.com/cern-mig/dev-tools/master/python/.pylintrc
 # command to run tests
 script:
   - pep8 bin/amqpclt amqpclt test
+  - sh pylint.sh --rcfile .pylintrc bin/amqpclt amqpclt test || echo "*ignored*"
   - python setup.py install --no-data-files
 # changing python path to include current directory in order to run tests
   - export PYTHONPATH=$PYTHONPATH:.
