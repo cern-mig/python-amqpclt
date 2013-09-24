@@ -286,23 +286,27 @@ ARGUMENTS = {
         "long": "--callback-code",
         "help": "execute the Python code on each message, "
                 "see the \"CALLBACK\" section for more information",
-                "metavar": "CODE", },
+                "metavar": "CODE",
+    },
     "callback-data": {
         "long": "--callback-data",
         "help": "pass this data to the user supplied callback code, "
                 "see the \"CALLBACK\" section for more information",
-        "metavar": "VALUE,...", },
+        "metavar": "VALUE,...",
+    },
     "callback-path": {
         "long": "--callback-path",
         "help": "execute the Python code in the given file on each "
                 "message, see the \"CALLBACK\" section for more "
                 "information",
-        "metavar": "PATH", },
+        "metavar": "PATH",
+    },
     "conf": {
         "long": "--conf",
         "help": "use the given configuration file, see the"
                 "configURATION FILE section for more information",
-        "metavar": "PATH", },
+        "metavar": "PATH",
+    },
     "count": {
         "long": "--count",
         "short": "-c",
@@ -311,154 +315,190 @@ ARGUMENTS = {
                 "note: when using an incoming broker, to avoid "
                 "consuming more messages, it is recommended to "
                 "enable the --reliable option",
-        "metavar": "INTEGER", },
+        "metavar": "INTEGER",
+    },
     "daemon": {
         "long": "--daemon",
         "action": "store_true",
         "help": "detach **amqpclt** so that it becomes a daemon "
-                "running in the background", },
+                "running in the background",
+    },
     "log": {
         "long": "--log",
         "help": "select logging system, one of: stdout, syslog, file, null",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "logfile": {
         "long": "--logfile",
         "help": "select logging file if log system file is selected",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "loglevel": {
         "long": "--loglevel",
         "help": "select logging level, one of: debug, info, warning and error",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "duration": {
         "long": "--duration",
         "type": int,
         "help": "process messages during at most the given number of "
                 "seconds and then stop",
-        "metavar": "SECONDS", },
-#    "heartbeat": {"long": "--heartbeat",
-#              "action": "store_true",
-#              "help": "enable AMQP heart-beats between **amqpclt** and "
-#                       "the broker(s)",
-#            },
+        "metavar": "SECONDS",
+    },
+    # "heartbeat": {
+    #     "long": "--heartbeat",
+    #     "action": "store_true",
+    #     "help": "enable AMQP heart-beats between **amqpclt** and "
+    #             "the broker(s)",
+    # },
     "help": {
         "short": "-h",
         "long": "--help",
         "action": "help",
-        "help": "print the help page"},
+        "help": "print the help page",
+    },
     "incoming-broker-auth": {
         "long": "--incoming-broker-auth",
         "help": "use this authentication string "
                 "(see :py:mod:`auth.credential`) "
                 "to authenticate to the incoming broker",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "incoming-broker-module": {
         "long": "--incoming-broker-module",
         "help": "module to use (pika|kombu)",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "incoming-broker-type": {
         "long": "--incoming-broker-type",
         "help": "set the incoming broker type; this can be useful "
                 "when using features which are broker specific",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "incoming-broker-uri": {
         "long": "--incoming-broker-uri",
         "help": "use this authentication URI "
                 "to connect to the incoming broker",
-        "metavar": "URI", },
+        "metavar": "URI",
+    },
     "incoming-queue": {
         "long": "--incoming-queue",
         "help": "read incoming messages from the given message queue "
                 "(see :py:mod:`messaging.queue`)",
-        "metavar": "KEY=VALUE...", },
-    "lazy": {"long": "--lazy",
-             "action": "store_true",
-             "help": "initialize the outgoing module only after having "
-                     "received the first message", },
-    "loop": {"long": "--loop",
-             "action": "store_true",
-             "help": "when using an incoming message queue, loop over it", },
+        "metavar": "KEY=VALUE...",
+    },
+    "lazy": {
+        "long": "--lazy",
+        "action": "store_true",
+        "help": "initialize the outgoing module only after having "
+                "received the first message",
+    },
+    "loop": {
+        "long": "--loop",
+        "action": "store_true",
+        "help": "when using an incoming message queue, loop over it",
+    },
     "outgoing-broker-auth": {
         "long": "--outgoing-broker-auth",
         "help": "use this authentication string "
                 "(see :py:mod:`auth.credential`) "
                 "to authenticate to the outgoing broker",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "outgoing-broker-module": {
         "long": "--outgoing-broker-module",
         "help": "module to use (pika|kombu)",
-        "metavar": "STRING", },
+        "metavar": "STRING",
+    },
     "outgoing-broker-type": {
         "long": "--outgoing-broker-type",
         "help": "set the outgoing broker type; this can be useful "
                 "when using features which are broker specific",
-        "metavar": "STRING", },
-    "outgoing-broker-uri": {"long": "--outgoing-broker-uri",
-                            "help": "use this authentication URI to connect to"
-                                    " the outgoing broker",
-                            "metavar": "URI", },
-    "outgoing-queue": {"long": "--outgoing-queue",
-                       "help": "store outgoing messages into the given message"
-                               " queue (see :py:mod:`messaging.queue`)",
-                       "metavar": "KEY=VALUE...", },
-    "pidfile": {"long": "--pidfile",
-                "help": "use this pid file",
-                "metavar": "PATH", },
+        "metavar": "STRING",
+    },
+    "outgoing-broker-uri": {
+        "long": "--outgoing-broker-uri",
+        "help": "use this authentication URI to connect to"
+                " the outgoing broker",
+        "metavar": "URI",
+    },
+    "outgoing-queue": {
+        "long": "--outgoing-queue",
+        "help": "store outgoing messages into the given message"
+                " queue (see :py:mod:`messaging.queue`)",
+        "metavar": "KEY=VALUE...",
+    },
+    "pidfile": {
+        "long": "--pidfile",
+        "help": "use this pid file",
+        "metavar": "PATH",
+    },
     "pod": {
         "long": "--pod",
         "action": "store_true",
-        "help": "print the pod guide"},
+        "help": "print the pod guide",
+    },
     "prefetch": {
         "long": "--prefetch",
         "type": int,
         "help": "set the prefetch value (i.e. the maximum number of "
                 "messages to received without acknowledging them) on "
                 "the incoming broker",
-        "metavar": "INTEGER", },
+        "metavar": "INTEGER",
+    },
     "quit": {
         "long": "--quit",
         "action": "store_true",
         "help": "tell another instance of **amqpclt** (identified by "
                 "its pid file, as specified by the --pidfile option) "
-                "to quit", },
+                "to quit",
+    },
     "reliable": {
         "long": "--reliable",
         "action": "store_true",
         "help": "use AMQP features for more reliable messaging "
                 "(i.e. client side acknowledgments) at the "
-                "cost of less performance", },
+                "cost of less performance",
+    },
     "remove": {
         "long": "--remove",
         "action": "store_true",
         "help": "when using an incoming message queue, remove the "
-                "processed messages", },
+                "processed messages",
+    },
     "rst": {
         "long": "--rst",
         "action": "store_true",
-        "help": "print the rst guide"},
+        "help": "print the rst guide",
+    },
     "statistics": {
         "long": "--statistics",
         "action": "store_true",
-        "help": "report statistics at the end of the execution", },
+        "help": "report statistics at the end of the execution",
+    },
     "status": {
         "long": "--status",
         "action": "store_true",
         "help": "get the status of another instance of **amqpclt** "
                 "(identified by its pid file, as specified by the "
                 "--pidfile option); the exit code will be zero if the "
-                "instance is alive and non-zero otherwise", },
+                "instance is alive and non-zero otherwise",
+    },
     "subscribe": {
         "long": "--subscribe",
         "action": "append",
         "help": "use these options in the AMQP subscription used "
                 "with the incoming broker; this option can be given "
                 "multiple times",
-        "metavar": "KEY=VALUE...", },
+        "metavar": "KEY=VALUE...",
+    },
     "timeout-connect": {
         "long": "--timeout-connect",
         "type": float,
         "help": "use this timeout when connecting to the"
                 " broker; can be fractional",
-        "metavar": "SECONDS", },
+        "metavar": "SECONDS",
+    },
     "timeout-inactivity": {
         "long": "--timeout-inactivity",
         "type": float,
@@ -466,25 +506,29 @@ ARGUMENTS = {
                 "to stop  **amqpclt** when no new messages "
                 "have been received (aka drain mode); can "
                 "be fractional",
-        "metavar": "SECONDS", },
+        "metavar": "SECONDS",
+    },
     "timeout-linger": {
         "long": "--timeout-linger",
         "type": float,
         "help": "when stopping **amqpclt**, use this timeout to"
                 " finish interacting with the broker; can be "
                 "fractional",
-        "metavar": "SECONDS", },
+        "metavar": "SECONDS",
+    },
     "version": {
         "long": "--version",
         "action": "version",
         "version": "%s %s" % (PROG, amqpclt.VERSION),
-        "help": "print the program version"},
+        "help": "print the program version",
+    },
     "window": {
         "long": "--window",
         "type": int,
         "help": "keep at most the given number of "
                 "not-yet-acknowledged messages in memory",
-        "metavar": "INTEGER", },
+        "metavar": "INTEGER",
+    },
 }
 
 DEFAULT_OPTIONS = {
