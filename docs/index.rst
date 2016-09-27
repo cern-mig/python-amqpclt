@@ -1,7 +1,7 @@
 amqpclt
 ===================
 
-amqpclt 0.5 - versatile AMQP client
+amqpclt 0.6 - versatile AMQP client
 
 SYNOPSIS
 --------
@@ -409,3 +409,5 @@ AUTHOR
 ------
 
 Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2013-2016 CERN
+
+

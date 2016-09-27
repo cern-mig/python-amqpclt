@@ -1,6 +1,6 @@
 Change log for python-amqpclt
 
-???	???
+0.6	Tue Sep 27 2016
 	* [lc] ported to latest pika
 
 0.5	Thu May 16 2013

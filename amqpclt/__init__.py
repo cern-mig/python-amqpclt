@@ -14,8 +14,8 @@ if "mtb" not in sys.modules:
 
 AUTHOR = "Massimo Paladin <massimo.paladin@gmail.com>"
 COPYRIGHT = "Copyright (C) 2013-2016 CERN"
-VERSION = "0.5"
-DATE = "16 May 2013"
+VERSION = "0.6"
+DATE = "27 September 2016"
 __author__ = AUTHOR
 __version__ = VERSION
 __date__ = DATE

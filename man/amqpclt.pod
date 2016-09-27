@@ -1,6 +1,6 @@
 =head1 NAME
 
-amqpclt 0.5 - versatile AMQP client
+amqpclt 0.6 - versatile AMQP client
 
 =head1 SYNOPSIS
 
@@ -488,6 +488,6 @@ Callback data must be given to specify which message queue to use:
 
 =head1 AUTHOR
 
-Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2013 CERN
+Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2013-2016 CERN
 
 
