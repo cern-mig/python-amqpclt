@@ -100,7 +100,7 @@ _EXPLOSION_RE = re.compile("^(\w+)-(.+)$")
 
 def _explode_dict(given):
     """ Explode all the keys having a "-". """
-    for key in given.keys():
+    for key in list(given):
         match = _EXPLOSION_RE.match(key)
         if match:
             if match.group(1) in given:
