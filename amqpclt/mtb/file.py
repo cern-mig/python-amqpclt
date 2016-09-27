@@ -1,14 +1,13 @@
 """
 File utilities for :py:mod:`mtb` module.
 
-
 Copyright (C) 2013 CERN
 """
 import os
 import stat
 
 
-#### File helper
+# File helper
 def is_regular_file(element):
     """
     Return True if the given element is a regular file.

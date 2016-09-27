@@ -22,24 +22,24 @@ from mtb.proc import daemonize
 from messaging.message import Message
 
 
-### Callback helpers
+# Callback helpers
 def _callback_module(code):
     """ Build the callback. """
     class Callback(object):
         """ Callback class. """
         def start(self, *args):
             """ Called when callback start. """
-        #def check(self, message):
+        # def check(self, message):
         #    """ Called when one message is received from incoming module. """
         def idle(self):
             """ Called when in idle and nothing to do. """
         def stop(self):
             """ Called when callback is stopped. """
         exec code
-        #start = classmethod(start)
-        #check = classmethod(check)
-        #idle = classmethod(idle)
-        #stop = classmethod(stop)
+        # start = classmethod(start)
+        # check = classmethod(check)
+        # idle = classmethod(idle)
+        # stop = classmethod(stop)
     return Callback
 
 

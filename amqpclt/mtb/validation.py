@@ -1,7 +1,6 @@
 """
 Validation utilities for :py:mod:`mtb` module.
 
-
 Copyright (C) 2013 CERN
 """
 import sys

@@ -3,6 +3,6 @@ Errors shared in the module.
 """
 
 
-### amqpclt error
+# amqpclt error
 class AmqpcltError(Exception):
     """ AMQP client error. """

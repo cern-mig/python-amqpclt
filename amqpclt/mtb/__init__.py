@@ -1,11 +1,15 @@
 """
 MyToolBox is a collection of reusable tools.
 
-
 Author: Massimo.Paladin@gmail.com
 
 Copyright (C) 2013 CERN
 """
+
+import sys
+
+PY2 = sys.hexversion < 0x03000000
+PY3 = not PY2
 
 AUTHOR = "Massimo Paladin <massimo.paladin@gmail.com>"
 COPYRIGHT = "Copyright (C) 2013 CERN"
@@ -14,9 +18,3 @@ DATE = "01 Mar 2013"
 __author__ = AUTHOR
 __version__ = VERSION
 __date__ = DATE
-
-
-import sys
-
-PY2 = sys.hexversion < 0x03000000
-PY3 = not PY2

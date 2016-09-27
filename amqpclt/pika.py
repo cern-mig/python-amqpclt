@@ -125,7 +125,7 @@ class PikaAdapter(object):
         else:
             # none
             extra = dict()
-        #if self._config.get("heartbeat") is not None:
+        # if self._config.get("heartbeat") is not None:
         #    extra["heartbeat"] = self._config["heartbeat"]
         parameters = self._pika.connection.ConnectionParameters(
             params['host'].encode(),

@@ -1,7 +1,6 @@
 """
 Pid file utilities for :py:mod:`mtb` module.
 
-
 Copyright (C) 2013 CERN
 """
 import datetime
@@ -14,7 +13,7 @@ import time
 LOGGER = logging.getLogger("mtb.pid")
 
 
-#### PID helpers
+# PID helpers
 class PIDError(Exception):
     """ PID related errors. """
 

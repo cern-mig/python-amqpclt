@@ -3,27 +3,26 @@
 amqpclt
 """
 import argparse
+import logging
 import os
 import pprint
 import re
 import sys
 import time
+from warnings import simplefilter
 
 import amqpclt
 import amqpclt.client
 import amqpclt.common
 
 from mtb.conf import read_apache_config, TreeDict
-from mtb.pid import \
-    pid_read, pid_write, pid_quit, pid_status
+from mtb.pid import pid_read, pid_write, pid_quit, pid_status
 from mtb.validation import mutex, reqall, reqany
 
 import auth.credential as credential
 
-import logging
 logging.basicConfig()
 
-from warnings import simplefilter
 simplefilter("ignore")
 
 PP = pprint.PrettyPrinter(indent=2)
@@ -535,7 +534,7 @@ DEFAULT_OPTIONS = {
     "daemon": False,
     "log": "stdout",
     "loglevel": "warning",
-    #"heartbeat": False,
+    # "heartbeat": False,
     "lazy": False,
     "loop": False,
     "remove": False,
@@ -666,8 +665,6 @@ def _read_args():
         print_rst()
         sys.exit(0)
     return vars(parsed)
-
-##################
 
 
 _KEYVALUE_RE = re.compile("[, ]")

@@ -108,7 +108,7 @@ class KombuAdapter(object):
         else:
             # none
             extra = dict()
-        #if self._config.get("heartbeat") is not None:
+        # if self._config.get("heartbeat") is not None:
         #    extra["heartbeat"] = self._config["heartbeat"]
         parameters = {
             "hostname": params["host"],

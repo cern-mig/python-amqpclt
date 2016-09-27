@@ -1,7 +1,6 @@
 """
 Process utilities for :py:mod:`mtb` module.
 
-
 Copyright (C) 2013 CERN
 """
 import os
@@ -171,7 +170,7 @@ def send_signal(daemon, sig):
             sys.exit(1)
 
 
-#### Daemon helper
+# Daemon helper
 def daemonize():
     """ Daemonize. UNIX double fork mechanism. """
     try:
