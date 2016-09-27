@@ -5,20 +5,22 @@ language: python
 python:
   - "2.6"
   - "2.7"
+  - "3.2"
+  - "3.3"
 services:
   - rabbitmq
 # command to install dependencies
 install:
-  - pip install --use-mirrors auth.credential
-  - pip install --use-mirrors argparse || echo "not needed from 3.2 on, ok"
-  - pip install --use-mirrors dirq
-  - pip install --use-mirrors messaging
-  - pip install --use-mirrors pika
-  - pip install --use-mirrors anyjson
-  - pip install --use-mirrors amqplib
-  - pip install --use-mirrors kombu
-  - pip install --use-mirrors pep8
-  - pip install --use-mirrors pylint
+  - pip install auth.credential
+  - pip install argparse || echo "not needed from 3.2 on, ok"
+  - pip install dirq
+  - pip install messaging
+  - pip install pika
+  - pip install anyjson
+  - pip install amqplib
+  - pip install kombu
+  - pip install pep8
+  - pip install pylint
   - curl -O -R -S -f -s https://raw.github.com/cern-mig/dev-tools/master/python/pylint.sh
   - curl -O -R -S -f -s https://raw.github.com/cern-mig/dev-tools/master/python/.pylintrc
 # command to run tests
