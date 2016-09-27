@@ -719,10 +719,8 @@ def _clean_configuration(config):
         val = config.get(auth)
         if val is None:
             continue
-        elif type(val) == six.binary_type:
+        elif type(val) in [six.binary_type, six.text_type]:
             cred = credential.parse(val)
-        elif type(val) == six.text_type:
-            cred = credential.parse(val.encode())
         else:
             for key, value in val.items():
                 val[key] = value.encode()
