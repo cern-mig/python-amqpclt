@@ -3,6 +3,7 @@ Pika modules.
 """
 import logging
 import re
+import six
 import ssl
 import time
 
@@ -264,9 +265,9 @@ class PikaOutgoingBroker(PikaAdapter):
             delivery_mode = 2
         header = dict()
         for key, val in msg.header.items():
-            if type(key) == unicode:
+            if type(key) == six.text_type:
                 key = key.encode("utf-8")
-            if type(val) == unicode:
+            if type(val) == six.text_type:
                 val = val.encode("utf-8")
             header[key] = val
         msg.header = header
@@ -301,7 +302,7 @@ class PikaOutgoingBroker(PikaAdapter):
             self._maybe_bind(queue_name,
                              exch_name,
                              destination.get("routing_key", ""))
-        if type(msg.body) == unicode:
+        if type(msg.body) == six.text_type:
             body = msg.body.encode("utf-8")
         else:
             body = msg.body

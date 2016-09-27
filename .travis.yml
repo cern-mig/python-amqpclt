@@ -11,18 +11,19 @@ services:
   - rabbitmq
 # command to install dependencies
 install:
-  - pip install auth.credential
+  - pip install amqplib
+  - pip install anyjson
   - pip install argparse || echo "not needed from 3.2 on, ok"
+  - pip install auth.credential
   - pip install dirq
+  - pip install kombu
   - pip install messaging
   - pip install pika
-  - pip install anyjson
-  - pip install amqplib
-  - pip install kombu
+  - pip install six
   - pip install pep8
   - pip install pylint
-  - curl -O -R -S -f -s https://raw.github.com/cern-mig/dev-tools/master/python/pylint.sh
-  - curl -O -R -S -f -s https://raw.github.com/cern-mig/dev-tools/master/python/.pylintrc
+  - curl -LORSfs https://raw.github.com/cern-mig/dev-tools/master/python/pylint.sh
+  - curl -LORSfs https://raw.github.com/cern-mig/dev-tools/master/python/.pylintrc
 # command to run tests
 script:
   - pep8 bin/amqpclt amqpclt test

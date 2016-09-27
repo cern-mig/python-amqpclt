@@ -7,6 +7,7 @@ import logging
 import os
 import pprint
 import re
+import six
 import sys
 import time
 from warnings import simplefilter
@@ -699,7 +700,7 @@ def _clean_configuration(config):
         val = config.get(arg)
         if val is None:
             continue
-        if type(val) in [str, unicode]:
+        if type(val) in [six.binary_type, six.text_type]:
             # explode it
             newval = _get_kv_from_string(val)
             config[arg] = newval
@@ -707,7 +708,7 @@ def _clean_configuration(config):
             newval = list()
             for value in val:
                 # explode it
-                if type(val) in [str, unicode]:
+                if type(val) in [six.binary_type, six.text_type]:
                     new_value = _get_kv_from_string(value)
                 else:
                     new_value = value
@@ -718,9 +719,9 @@ def _clean_configuration(config):
         val = config.get(auth)
         if val is None:
             continue
-        elif type(val) == str:
+        elif type(val) == six.binary_type:
             cred = credential.parse(val)
-        elif type(val) == unicode:
+        elif type(val) == six.text_type:
             cred = credential.parse(val.encode())
         else:
             for key, value in val.items():
@@ -796,7 +797,7 @@ def option_parse():
     if type(subscriptions) != list:
         subscriptions = [subscriptions, ]
     for sub in subscriptions:
-        if type(sub) == str:
+        if type(sub) == six.binary_type:
             sub = dict([tuple(sub.split("=")), ])
         destination = sub.get("destination", None)
         if destination is None:
