@@ -125,12 +125,12 @@ class KombuAdapter(object):
         self._channel = connection.channel()
         LOGGER.debug(
             "%s broker %s:%s: %s" %
-            (direction, params['host'], params['port'], self.amqp_type(),))
+            (direction, params['host'], params['port'], self.server_type(),))
         if self._config.get("%s-broker-type" % direction) is None:
-            self._config["%s-broker-type" % direction] = self.amqp_type()
+            self._config["%s-broker-type" % direction] = self.server_type()
         return True
 
-    def amqp_type(self):
+    def server_type(self):
         """ Return the broker type. """
         if self._connection is None:
             return None

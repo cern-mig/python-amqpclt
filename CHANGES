@@ -1,5 +1,8 @@
 Change log for python-amqpclt
 
+???	???
+	* [lc] ported to latest pika
+
 0.5	Thu May 16 2013
 	* [mp] bug fixing
 	* [mp] improvements
@@ -12,3 +15,4 @@ Change log for python-amqpclt
 	* [mp] first release
 
 [mp] = Massimo Paladin <Massimo.Paladin@gmail.com>
+[lc] = Lionel Cons <lionel.cons@cern.ch>

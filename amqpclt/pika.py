@@ -131,22 +131,27 @@ class PikaAdapter(object):
             params['host'].encode(),
             int(params['port']),
             params.get('virtual_host', "rabbitmq").encode(), **extra)
-        self._connection = connection = self._pika.BlockingConnection(
-            parameters)
-        self._channel = connection.channel()
-        LOGGER.debug(
-            "%s broker %s:%s: %s %s" %
-            (direction, params['host'], params['port'], self.amqp_type(),
-             connection.server_properties.get("version", "UNKNOWN"),))
+        self._connection = self._pika.BlockingConnection(parameters)
+        self._channel = self._connection.channel()
+        self._server_properties = self._connection._impl.server_properties
+        LOGGER.debug("%s broker %s:%s: %s %s" %
+                     (direction, params['host'], params['port'],
+                      self.server_type(), self.server_version()))
         if self._config.get("%s-broker-type" % direction) is None:
-            self._config["%s-broker-type" % direction] = self.amqp_type()
+            self._config["%s-broker-type" % direction] = self.server_type()
         return True
 
-    def amqp_type(self):
-        """ Return the broker type. """
+    def server_type(self):
+        """ Return the server type. """
         if self._connection is None:
             return None
-        return self._connection.server_properties.get("product", "UNKNOWN")
+        return self._server_properties.get("product", "UNKNOWN")
+
+    def server_version(self):
+        """ Return the server version. """
+        if self._connection is None:
+            return None
+        return self._server_properties.get("version", "UNKNOWN")
 
 
 class PikaIncomingBroker(PikaAdapter):
