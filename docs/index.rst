@@ -408,6 +408,4 @@ Callback data must be given to specify which message queue to use::
 AUTHOR
 ------
 
-Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2013 CERN
-
-
+Massimo Paladin <massimo.paladin@gmail.com> - Copyright (C) 2013-2016 CERN

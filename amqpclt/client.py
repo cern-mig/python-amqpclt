@@ -35,7 +35,7 @@ def _callback_module(code):
             """ Called when in idle and nothing to do. """
         def stop(self):
             """ Called when callback is stopped. """
-        exec code
+        exec(code)
         # start = classmethod(start)
         # check = classmethod(check)
         # idle = classmethod(idle)
